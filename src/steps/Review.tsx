@@ -119,6 +119,17 @@ export function Review() {
         />
 
         <Section
+          title="Workloads"
+          items={[
+            ['Workload Type', config.workloadConfig.workloadType],
+            ['Traffic Level', config.workloadConfig.trafficLevel],
+            ['HPA', config.workloadConfig.enableHpa ? `✅ Enabled (CPU ${config.workloadConfig.targetCpuUtilization}%, Mem ${config.workloadConfig.targetMemoryUtilization}%)` : 'Disabled'],
+            ['VPA', config.workloadConfig.enableVpa ? '✅ Enabled' : 'Disabled'],
+            ['Monitoring Integration', config.workloadConfig.enableMonitoringIntegration ? '✅ Prometheus annotations' : 'Disabled'],
+          ]}
+        />
+
+        <Section
           title="Networking"
           items={[
             ['Network Plugin', config.networkPlugin],

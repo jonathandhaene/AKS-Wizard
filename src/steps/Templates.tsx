@@ -4,8 +4,9 @@ import { useWizard } from '../contexts/WizardContext';
 import { generateTerraform } from '../utils/terraformGenerator';
 import { generateBicep } from '../utils/bicepGenerator';
 import { generateGitHubWorkflow } from '../utils/githubWorkflowGenerator';
+import { generateResourceYaml } from '../utils/resourceRecommendations';
 
-type Tab = 'terraform' | 'bicep' | 'github-actions';
+type Tab = 'terraform' | 'bicep' | 'github-actions' | 'resources';
 
 export function Templates() {
   const { config } = useWizard();
@@ -15,17 +16,30 @@ export function Templates() {
   const terraform = generateTerraform(config);
   const bicep = generateBicep(config);
   const githubActions = generateGitHubWorkflow(config);
+  const resources = generateResourceYaml(config.workloadConfig);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'terraform', label: '🔷 Terraform (HCL)' },
     { id: 'bicep', label: '💠 Bicep' },
     { id: 'github-actions', label: '⚙️ GitHub Actions' },
+    { id: 'resources', label: '📦 Resource Config' },
   ];
 
-  const currentCode =
-    tab === 'terraform' ? terraform : tab === 'bicep' ? bicep : githubActions;
-  const filename =
-    tab === 'terraform' ? 'main.tf' : tab === 'bicep' ? 'main.bicep' : 'deploy-aks.yml';
+  const codeByTab: Record<Tab, string> = {
+    terraform,
+    bicep,
+    'github-actions': githubActions,
+    resources,
+  };
+  const filenameByTab: Record<Tab, string> = {
+    terraform: 'main.tf',
+    bicep: 'main.bicep',
+    'github-actions': 'deploy-aks.yml',
+    resources: 'resources.yaml',
+  };
+
+  const currentCode = codeByTab[tab];
+  const filename = filenameByTab[tab];
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(currentCode);
@@ -146,6 +160,22 @@ export function Templates() {
           <code style={{ color: 'var(--accent)' }}>azure/k8s-bake@v3</code> to render Helm
           charts before deploying with{' '}
           <code style={{ color: 'var(--accent)' }}>azure/k8s-deploy@v5</code>.
+        </div>
+      ) : tab === 'resources' ? (
+        <div
+          className="mt-4 p-3 rounded text-sm"
+          style={{
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          💡 <strong>Tip:</strong> Apply this manifest with{' '}
+          <code style={{ color: 'var(--accent)' }}>kubectl apply -f resources.yaml</code> after
+          your cluster is running. Replace <code>my-registry/my-app:latest</code> with your
+          actual container image. Tune CPU/memory values based on observed usage from{' '}
+          {config.enableContainerInsights ? 'Container Insights' : config.enablePrometheus ? 'Prometheus' : 'your monitoring stack'}.
         </div>
       ) : (
         <div

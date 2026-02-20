@@ -1,5 +1,18 @@
 // ─── Wizard Configuration Types ───────────────────────────────────────────────
 
+export type WorkloadType = 'general' | 'memory-intensive' | 'compute-intensive' | 'gpu-heavy' | 'io-intensive';
+export type TrafficLevel = 'low' | 'medium' | 'high' | 'burst';
+
+export interface WorkloadConfig {
+  workloadType: WorkloadType;
+  trafficLevel: TrafficLevel;
+  enableHpa: boolean;
+  enableVpa: boolean;
+  targetCpuUtilization: number;
+  targetMemoryUtilization: number;
+  enableMonitoringIntegration: boolean;
+}
+
 export type Theme =
   | 'theme-classic'
   | 'theme-win95'
@@ -57,6 +70,9 @@ export interface WizardConfig {
   enablePrometheus: boolean;
   enableAzureMonitor: boolean;
 
+  // Workload Requirements
+  workloadConfig: WorkloadConfig;
+
   // Add-ons
   enableHttpApplicationRouting: boolean;
   enableAzurePolicy: boolean;
@@ -104,6 +120,16 @@ export const defaultConfig: WizardConfig = {
   enablePrometheus: false,
   enableAzureMonitor: false,
 
+  workloadConfig: {
+    workloadType: 'general',
+    trafficLevel: 'medium',
+    enableHpa: false,
+    enableVpa: false,
+    targetCpuUtilization: 70,
+    targetMemoryUtilization: 80,
+    enableMonitoringIntegration: false,
+  },
+
   enableHttpApplicationRouting: false,
   enableAzurePolicy: false,
   enableKeyVaultProvider: false,
@@ -118,6 +144,7 @@ export const STEPS = [
   { id: 'maturity', label: 'Readiness' },
   { id: 'basics', label: 'Basics' },
   { id: 'nodes', label: 'Node Pools' },
+  { id: 'workload', label: 'Workloads' },
   { id: 'networking', label: 'Networking' },
   { id: 'security', label: 'Security' },
   { id: 'monitoring', label: 'Monitoring' },

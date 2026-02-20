@@ -4,6 +4,7 @@ import { Welcome } from './steps/Welcome';
 import { MaturityAssessment } from './steps/MaturityAssessment';
 import { ClusterBasics } from './steps/ClusterBasics';
 import { NodePools } from './steps/NodePools';
+import { WorkloadRequirements } from './steps/WorkloadRequirements';
 import { Networking } from './steps/Networking';
 import { Security } from './steps/Security';
 import { Monitoring } from './steps/Monitoring';
@@ -18,6 +19,7 @@ const STEP_COMPONENTS = [
   MaturityAssessment,
   ClusterBasics,
   NodePools,
+  WorkloadRequirements,
   Networking,
   Security,
   Monitoring,
