@@ -6,7 +6,9 @@ export type Theme =
   | 'theme-cyberpunk'
   | 'theme-nature'
   | 'theme-dark'
-  | 'theme-high-contrast';
+  | 'theme-high-contrast'
+  | 'theme-fluent'
+  | 'theme-paleontology';
 
 export interface NodePool {
   name: string;
