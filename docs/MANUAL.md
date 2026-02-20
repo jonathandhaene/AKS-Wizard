@@ -13,16 +13,18 @@ This manual provides a step-by-step walkthrough of every screen in the AKS-Wizar
 ## Table of Contents
 
 1. [Welcome](#step-1-welcome)
-2. [Cluster Basics](#step-2-cluster-basics)
-3. [Node Pools](#step-3-node-pools)
-4. [Networking](#step-4-networking)
-5. [Security & Identity](#step-5-security--identity)
-6. [Monitoring](#step-6-monitoring)
-7. [Add-ons](#step-7-add-ons)
-8. [Review & Validate](#step-8-review--validate)
-9. [Generated Templates](#step-9-generated-templates)
-10. [Deploy to Azure](#step-10-deploy-to-azure)
-11. [Save to GitHub](#step-11-save-to-github)
+2. [Team Readiness Assessment](#step-2-team-readiness-assessment)
+3. [Cluster Basics](#step-3-cluster-basics)
+4. [Node Pools](#step-4-node-pools)
+5. [Workload Requirements](#step-5-workload-requirements)
+6. [Networking](#step-6-networking)
+7. [Security & Identity](#step-7-security--identity)
+8. [Monitoring](#step-8-monitoring)
+9. [Add-ons](#step-9-add-ons)
+10. [Review & Validate](#step-10-review--validate)
+11. [Generated Templates](#step-11-generated-templates)
+12. [Deploy to Azure](#step-12-deploy-to-azure)
+13. [Save to GitHub](#step-13-save-to-github)
 
 ---
 
@@ -56,6 +58,10 @@ Build your Azure Kubernetes Service cluster step-by-step
 [ Let's get started → ]
 ```
 
+### Screenshot
+
+![Step 1 — Welcome](screenshots/step-01-welcome.png)
+
 ### Impact
 
 No configuration choices are made on this screen. Clicking **Let's get started →** advances you to the Cluster Basics step.
@@ -67,7 +73,69 @@ No configuration choices are made on this screen. Clicking **Let's get started �
 
 ---
 
-## Step 2: Cluster Basics
+## Step 2: Team Readiness Assessment
+
+### Purpose
+
+The Team Readiness Assessment screen presents six yes/no questions to help the wizard recommend the most appropriate AKS mode for your team: **AKS Automatic** (fully managed, accelerated onboarding) or **AKS Standard** (full control, recommended for platform teams).
+
+### What you see
+
+```
+Team Readiness Assessment
+Answer these questions to help the wizard recommend the right AKS mode for your team:
+AKS Automatic (fully managed, accelerated onboarding) or AKS Standard (full control, recommended for platform teams).
+
+ℹ️ AKS Automatic vs Standard
+AKS Automatic reduces operational overhead by managing node provisioning, upgrades, and security
+configurations automatically — ideal for teams new to Kubernetes. AKS Standard gives your platform
+team full control over every cluster parameter.
+
+1. Does your team include dedicated platform / infrastructure engineers?  [ ✅ Yes ] [ ❌ No ]
+2. Can your team commit to reviewing Kubernetes upgrades within 30 days?  [ ✅ Yes ] [ ❌ No ]
+3. Do you require advanced networking customisation?                       [ ✅ Yes ] [ ❌ No ]
+4. Does your team already operate a GitOps or CI/CD pipeline?             [ ✅ Yes ] [ ❌ No ]
+5. Do your workloads require custom OS, GPU, or specialised node pools?   [ ✅ Yes ] [ ❌ No ]
+6. Are you deploying across multiple environments?                         [ ✅ Yes ] [ ❌ No ]
+
+6 / 6 questions answered
+
+🔧 Recommended: AKS Standard
+Your team has the maturity to leverage AKS Standard's full control over cluster configuration.
+You can override this recommendation on the Basics step.
+```
+
+### Screenshot
+
+![Step 2 — Team Readiness Assessment](screenshots/step-02-readiness.png)
+
+### Questions & Impact
+
+| # | Question | Signals AKS Standard when… |
+|---|----------|-----------------------------|
+| 1 | Dedicated platform engineers? | **Yes** — platform team can handle full cluster lifecycle. |
+| 2 | Commit to upgrade reviews within 30 days? | **Yes** — team can follow AKS version support windows. |
+| 3 | Advanced networking customisation required? | **Yes** — AKS Automatic constrains certain networking options. |
+| 4 | GitOps / CI/CD pipeline in place? | **Yes** — IaC pipelines unlock full Standard AKS benefits. |
+| 5 | Custom OS, GPU, or specialised node pools? | **Yes** — AKS Automatic manages node pools on your behalf. |
+| 6 | Multi-environment deployment? | **Yes** — environment-specific configs benefit from Standard. |
+
+### Recommendation Logic
+
+- **4 or more "Yes" answers** → recommends **AKS Standard**
+- **Fewer than 4 "Yes" answers** → recommends **AKS Automatic**
+
+The recommendation is displayed at the bottom of the page after all questions are answered. You can always override it on the next step (Cluster Basics).
+
+### Official References
+
+- [AKS Automatic overview](https://learn.microsoft.com/azure/aks/intro-aks-automatic)
+- [AKS Standard overview](https://learn.microsoft.com/azure/aks/intro-kubernetes)
+- [Choose the right AKS tier](https://learn.microsoft.com/azure/aks/free-standard-pricing-tiers)
+
+---
+
+## Step 3: Cluster Basics
 
 ### Purpose
 
@@ -90,6 +158,10 @@ Azure Region           ⓘ  [ East US                          ▼     ]
 Kubernetes Version     ⓘ  [ 1.29.x                           ▼     ]
 ```
 
+### Screenshot
+
+![Step 3 — Cluster Basics](screenshots/step-03-cluster-basics.png)
+
 ### Fields & Impact
 
 | Field | Description | Impact |
@@ -109,7 +181,7 @@ Kubernetes Version     ⓘ  [ 1.29.x                           ▼     ]
 
 ---
 
-## Step 3: Node Pools
+## Step 4: Node Pools
 
 ### Purpose
 
@@ -137,6 +209,10 @@ User pools are for your application workloads. You need at least one system pool
 
 [ + Add User Node Pool ]
 ```
+
+### Screenshot
+
+![Step 4 — Node Pools](screenshots/step-04-node-pools.png)
 
 ### Fields & Impact
 
@@ -184,7 +260,90 @@ Click **+ Add User Node Pool** to add additional pools. Each added pool appears 
 
 ---
 
-## Step 4: Networking
+## Step 5: Workload Requirements
+
+### Purpose
+
+The Workload Requirements screen collects information about the applications you plan to run on the cluster. The wizard uses your answers to recommend appropriate VM SKUs for user node pools and surfaces relevant autoscaling and monitoring options.
+
+### What you see
+
+```
+Workload Requirements
+Tell us about your workloads so we can recommend optimized VM sizes and resource configurations.
+
+💡 Why does this matter?
+Choosing the right VM family and resource requests ensures cost-effectiveness,
+prevents out-of-memory kills, and enables effective autoscaling.
+
+Workload Type ⓘ
+  [ ⚙️ General Purpose     ]  Web servers, APIs, microservices         ✓
+  [ 🧠 Memory-Intensive    ]  Caches, in-memory databases, analytics
+  [ 🔢 Compute-Intensive   ]  Batch processing, simulations, encoding
+  [ 🎮 GPU-Heavy           ]  ML training/inference, graphics rendering
+  [ 💾 I/O-Intensive       ]  Streaming, high-throughput data pipelines
+
+Expected Traffic Level ⓘ
+  [ Low   ]  Occasional traffic, dev/test environments
+  [ Medium]  Steady traffic with occasional spikes     ✓ Selected
+  [ High  ]  Sustained heavy load, production services
+  [ Burst ]  Extreme spikes, event-driven or seasonal traffic
+
+Autoscaling
+  Horizontal Pod Autoscaler (HPA)  ⓘ  [ OFF ]
+  Vertical Pod Autoscaler (VPA)    ⓘ  [ OFF ]
+
+Monitoring Integration
+  Add Prometheus scraping annotations  ⓘ  [ OFF ]
+
+💡 Recommended VM SKUs for User Node Pools
+  Standard_D4s_v3  4 vCPU, 16 GiB RAM  — Balanced compute/memory for most workloads
+  Standard_D8s_v3  8 vCPU, 32 GiB RAM  — Scale-up option for heavier general workloads
+```
+
+### Screenshot
+
+![Step 5 — Workload Requirements](screenshots/step-05-workloads.png)
+
+### Fields & Impact
+
+#### Workload Type
+
+| Type | Best For | Recommended VM Family |
+|------|----------|-----------------------|
+| **General Purpose** | Web servers, APIs, microservices | D-series (balanced CPU/RAM) |
+| **Memory-Intensive** | Caches, in-memory databases, analytics | E-series (high RAM) |
+| **Compute-Intensive** | Batch processing, simulations, encoding | F-series (high CPU) |
+| **GPU-Heavy** | ML training/inference, graphics rendering | NC/ND-series (GPU) |
+| **I/O-Intensive** | Streaming, high-throughput data pipelines | L-series (high local storage) |
+
+#### Expected Traffic Level
+
+| Level | Description | Autoscaling Recommendation |
+|-------|-------------|---------------------------|
+| **Low** | Dev/test, occasional bursts | Fixed node count, no HPA needed |
+| **Medium** | Steady with occasional spikes | HPA recommended |
+| **High** | Sustained production load | HPA + Cluster Autoscaler |
+| **Burst** | Extreme spikes | HPA + KEDA for event-driven scaling |
+
+#### Autoscaling Options
+
+| Option | Description | Impact |
+|--------|-------------|--------|
+| **HPA** (Horizontal Pod Autoscaler) | Automatically scales the number of pod replicas based on CPU/memory metrics. | Requires resource requests/limits to be set on your deployments. |
+| **VPA** (Vertical Pod Autoscaler) | Automatically adjusts CPU/memory requests for pods based on actual usage. | Cannot be used simultaneously with HPA on the same resource. |
+| **Prometheus scraping** | Adds Prometheus annotations to generated resource manifests. | Enables custom metric scraping for KEDA and advanced HPA. |
+
+### Official References
+
+- [Horizontal Pod Autoscaler](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
+- [Vertical Pod Autoscaler in AKS](https://learn.microsoft.com/azure/aks/vertical-pod-autoscaler)
+- [KEDA — Kubernetes Event-Driven Autoscaling](https://keda.sh/)
+- [Azure VM sizes overview](https://learn.microsoft.com/azure/virtual-machines/sizes)
+
+---
+
+## Step 6: Networking
 
 ### Purpose
 
@@ -210,6 +369,10 @@ Docker Bridge CIDR ⓘ [ 172.17.0.1/16                  ]
 Load Balancer SKU  ⓘ
 [ ⭐ Standard (Recommended) ]  [ 🔹 Basic ]
 ```
+
+### Screenshot
+
+![Step 6 — Networking](screenshots/step-06-networking.png)
 
 ### Fields & Impact
 
@@ -240,7 +403,7 @@ When using **Azure CNI**, ensure the following IP ranges **do not overlap**:
 
 ---
 
-## Step 5: Security & Identity
+## Step 7: Security & Identity
 
 ### Purpose
 
@@ -267,6 +430,10 @@ They ensure only authorized users and services can access your cluster.
 Network Policy  ⓘ
 [ 🚫 None ]  [ 🔷 Azure ]  [ 🐱 Calico ]
 ```
+
+### Screenshot
+
+![Step 7 — Security & Identity](screenshots/step-07-security.png)
 
 ### Fields & Impact
 
@@ -299,7 +466,7 @@ Network Policy  ⓘ
 
 ---
 
-## Step 6: Monitoring
+## Step 8: Monitoring
 
 ### Purpose
 
@@ -322,6 +489,10 @@ and log visibility. Prometheus enables custom metric scraping.
 │ Enable Azure Monitor Metrics       ⓘ  [ OFF ]                 │
 └────────────────────────────────────────────────────────────────┘
 ```
+
+### Screenshot
+
+![Step 8 — Monitoring](screenshots/step-08-monitoring.png)
 
 ### Fields & Impact
 
@@ -370,7 +541,7 @@ Use [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) 
 
 ---
 
-## Step 7: Add-ons
+## Step 9: Add-ons
 
 ### Purpose
 
@@ -394,6 +565,10 @@ community-supported features. You can always enable add-ons after cluster creati
 │ 🔧 Dapr (Distributed Application Runtime) ⓘ  [ OFF ]               │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+### Screenshot
+
+![Step 9 — Add-ons](screenshots/step-09-addons.png)
 
 ### Add-ons & Impact
 
@@ -436,7 +611,7 @@ Are you building microservices that need pub/sub, state, or service invocation?
 
 ---
 
-## Step 8: Review & Validate
+## Step 10: Review & Validate
 
 ### Purpose
 
@@ -494,6 +669,10 @@ MONITORING & ADD-ONS
 [ ← Back ]  [ Looks good! Generate Templates → ]   ← disabled if checks fail
 ```
 
+### Screenshot
+
+![Step 10 — Review & Validate](screenshots/step-10-review.png)
+
 ### Validation Checks
 
 The wizard performs the following automated checks before allowing you to proceed:
@@ -518,7 +697,7 @@ The wizard performs the following automated checks before allowing you to procee
 
 ---
 
-## Step 9: Generated Templates
+## Step 11: Generated Templates
 
 ### Purpose
 
@@ -552,6 +731,10 @@ Your AKS configuration has been converted into Infrastructure-as-Code templates.
 💡 Tip: Review the generated templates before deploying.
    You can further customize them for your specific environment.
 ```
+
+### Screenshot
+
+![Step 11 — Generated Templates](screenshots/step-11-templates.png)
 
 ### Terraform Template
 
@@ -613,7 +796,7 @@ az deployment sub create \
 
 ---
 
-## Step 10: Deploy to Azure
+## Step 12: Deploy to Azure
 
 ### Purpose
 
@@ -649,6 +832,10 @@ script using the Azure CLI. Copy or download the script and run it in your local
 │     ...                                                      │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Screenshot
+
+![Step 12 — Deploy to Azure](screenshots/step-12-deploy.png)
 
 ### Using the Generated Script
 
@@ -708,7 +895,7 @@ The generated script includes your selected options as flags to `az aks create`.
 
 ---
 
-## Step 11: Save to GitHub
+## Step 13: Save to GitHub
 
 ### Purpose
 
@@ -744,6 +931,10 @@ Branch      [ main            ]   Folder Path [ aks-configs/ ]
 You've completed the AKS Configuration Wizard.
 Your cluster configuration is ready to go!
 ```
+
+### Screenshot
+
+![Step 13 — Save to GitHub](screenshots/step-13-github.png)
 
 ### Fields & Impact
 
