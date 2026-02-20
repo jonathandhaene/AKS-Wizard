@@ -11,7 +11,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
     const saved = localStorage.getItem('aks-wizard-theme');
-    return (saved as Theme) || 'theme-classic';
+    return (saved as Theme) || 'theme-paleontology';
   });
 
   const setTheme = (t: Theme) => {
@@ -28,6 +28,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       'theme-nature',
       'theme-dark',
       'theme-high-contrast',
+      'theme-fluent',
+      'theme-paleontology',
     );
     document.body.classList.add(theme);
   }, [theme]);

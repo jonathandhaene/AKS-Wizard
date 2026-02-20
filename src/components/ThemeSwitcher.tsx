@@ -8,6 +8,8 @@ const THEMES: { value: Theme; label: string; emoji: string }[] = [
   { value: 'theme-nature', label: 'Nature', emoji: '🌿' },
   { value: 'theme-dark', label: 'Dark', emoji: '🌙' },
   { value: 'theme-high-contrast', label: 'High Contrast', emoji: '⬛' },
+  { value: 'theme-fluent', label: 'Fluent', emoji: '🪟' },
+  { value: 'theme-paleontology', label: 'Paleontology', emoji: '🦕' },
 ];
 
 export function ThemeSwitcher() {
