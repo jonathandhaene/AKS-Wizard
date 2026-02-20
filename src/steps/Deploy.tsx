@@ -45,7 +45,7 @@ export function Deploy() {
       }
       addLog('');
       addLog(`🎉 Cluster "${config.clusterName}" deployed successfully!`);
-      addLog(`kubectl get nodes —context ${config.clusterName}`);
+      addLog(`kubectl get nodes --context ${config.clusterName}`);
       setStatus('success');
     } catch {
       addLog('❌ Deployment failed unexpectedly.');
@@ -141,13 +141,14 @@ export function Deploy() {
       {status !== 'idle' && (
         <div className="card mb-4">
           <div className="section-title">Deployment Steps</div>
-          {DEPLOYMENT_STEPS.map((step) => {
+          {DEPLOYMENT_STEPS.map((step, idx) => {
             const done = completedSteps.has(step.id);
-            const running = status === 'running' && !done && !completedSteps.has(DEPLOYMENT_STEPS[DEPLOYMENT_STEPS.indexOf(step) - 1]?.id ?? '');
+            const prevDone = idx === 0 || completedSteps.has(DEPLOYMENT_STEPS[idx - 1].id);
+            const isCurrentlyRunning = status === 'running' && !done && prevDone;
             return (
               <div key={step.id} className="flex items-center gap-2 py-1.5">
                 <span style={{ color: done ? 'var(--success)' : 'var(--text-muted)' }}>
-                  {done ? '✅' : running ? '⏳' : '○'}
+                  {done ? '✅' : isCurrentlyRunning ? '⏳' : '○'}
                 </span>
                 <span className="text-sm" style={{ color: done ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                   {step.label}
