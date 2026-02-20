@@ -4,6 +4,10 @@
 
 A browser-based wizard that guides you step-by-step through configuring an Azure Kubernetes Service (AKS) cluster, then generates deployment-ready templates (Bicep, Terraform, Helm values, GitHub Actions workflows) and a PowerShell deployment script.
 
+## Documentation
+
+📖 **[User Manual](docs/MANUAL.md)** — step-by-step guide to every screen in the wizard, including explanations of all configuration options, their impact, and official Azure references.
+
 ## Features
 
 - **Step-by-step configuration** – Cluster basics, node pools, networking, security, monitoring, and add-ons
