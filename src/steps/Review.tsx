@@ -104,6 +104,7 @@ export function Review() {
             ['Cluster Name', config.clusterName],
             ['Region', config.region],
             ['Kubernetes Version', config.kubernetesVersion],
+            ['AKS Mode', config.aksMode],
           ]}
         />
 
@@ -133,7 +134,7 @@ export function Review() {
             ['RBAC', config.enableRbac ? '✅ Enabled' : '❌ Disabled'],
             ['Azure AD', config.enableAzureAd ? '✅ Enabled' : 'Disabled'],
             ['Pod Identity', config.enablePodIdentity ? '✅ Enabled' : 'Disabled'],
-            ['Auto-Upgrade', config.enableAutoUpgrade ? '✅ Enabled' : 'Disabled'],
+            ['Auto-Upgrade Channel', config.autoUpgradeChannel],
           ]}
         />
 
@@ -145,6 +146,7 @@ export function Review() {
             ['Key Vault Provider', config.enableKeyVaultProvider ? '✅ Enabled' : 'Disabled'],
             ['KEDA', config.enableKeda ? '✅ Enabled' : 'Disabled'],
             ['Dapr', config.enableDapr ? '✅ Enabled' : 'Disabled'],
+            ['ACR Integration', config.enableAcrIntegration ? `✅ ${config.containerRegistryName || 'Enabled'}` : 'Disabled'],
           ]}
         />
       </div>

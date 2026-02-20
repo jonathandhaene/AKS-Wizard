@@ -3,8 +3,9 @@ import { WizardLayout } from '../components/WizardLayout';
 import { useWizard } from '../contexts/WizardContext';
 import { generateTerraform } from '../utils/terraformGenerator';
 import { generateBicep } from '../utils/bicepGenerator';
+import { generateGitHubWorkflow } from '../utils/githubWorkflowGenerator';
 
-type Tab = 'terraform' | 'bicep';
+type Tab = 'terraform' | 'bicep' | 'github-actions';
 
 export function Templates() {
   const { config } = useWizard();
@@ -13,9 +14,18 @@ export function Templates() {
 
   const terraform = generateTerraform(config);
   const bicep = generateBicep(config);
+  const githubActions = generateGitHubWorkflow(config);
 
-  const currentCode = tab === 'terraform' ? terraform : bicep;
-  const filename = tab === 'terraform' ? 'main.tf' : 'main.bicep';
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'terraform', label: '🔷 Terraform (HCL)' },
+    { id: 'bicep', label: '💠 Bicep' },
+    { id: 'github-actions', label: '⚙️ GitHub Actions' },
+  ];
+
+  const currentCode =
+    tab === 'terraform' ? terraform : tab === 'bicep' ? bicep : githubActions;
+  const filename =
+    tab === 'terraform' ? 'main.tf' : tab === 'bicep' ? 'main.bicep' : 'deploy-aks.yml';
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(currentCode);
@@ -37,25 +47,26 @@ export function Templates() {
     <WizardLayout>
       <h2 className="text-2xl font-bold mb-2">Generated Templates</h2>
       <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-        Your AKS configuration has been converted into Infrastructure-as-Code templates.
+        Your AKS configuration has been converted into Infrastructure-as-Code templates and a
+        CI/CD pipeline workflow.
       </p>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-4">
-        {(['terraform', 'bicep'] as Tab[]).map((t) => (
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {tabs.map((t) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={t.id}
+            onClick={() => setTab(t.id)}
             className="px-4 py-2 font-semibold text-sm rounded-t transition-all"
             style={{
-              background: tab === t ? 'var(--accent)' : 'var(--bg-secondary)',
-              color: tab === t ? 'var(--accent-text)' : 'var(--text-secondary)',
-              border: `1px solid ${tab === t ? 'var(--accent)' : 'var(--border)'}`,
+              background: tab === t.id ? 'var(--accent)' : 'var(--bg-secondary)',
+              color: tab === t.id ? 'var(--accent-text)' : 'var(--text-secondary)',
+              border: `1px solid ${tab === t.id ? 'var(--accent)' : 'var(--border)'}`,
               borderRadius: 'var(--radius) var(--radius) 0 0',
-              borderBottom: tab === t ? 'none' : undefined,
+              borderBottom: tab === t.id ? 'none' : undefined,
             }}
           >
-            {t === 'terraform' ? '🔷 Terraform (HCL)' : '💠 Bicep'}
+            {t.label}
           </button>
         ))}
       </div>
@@ -117,18 +128,39 @@ export function Templates() {
         </pre>
       </div>
 
-      <div
-        className="mt-4 p-3 rounded text-sm"
-        style={{
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          color: 'var(--text-secondary)',
-        }}
-      >
-        💡 <strong>Tip:</strong> Review the generated templates before deploying. You can further
-        customize them for your specific environment.
-      </div>
+      {tab === 'github-actions' ? (
+        <div
+          className="mt-4 p-3 rounded text-sm"
+          style={{
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          💡 <strong>Tip:</strong> Place this file at{' '}
+          <code style={{ color: 'var(--accent)' }}>.github/workflows/deploy-aks.yml</code> in your
+          repository. Create the required secrets (<code>AZURE_CREDENTIALS</code>
+          {config.enableAcrIntegration ? ', ACR_USERNAME, ACR_PASSWORD' : ''}) under{' '}
+          <em>Settings → Secrets and variables → Actions</em>. The workflow uses{' '}
+          <code style={{ color: 'var(--accent)' }}>azure/k8s-bake@v3</code> to render Helm
+          charts before deploying with{' '}
+          <code style={{ color: 'var(--accent)' }}>azure/k8s-deploy@v5</code>.
+        </div>
+      ) : (
+        <div
+          className="mt-4 p-3 rounded text-sm"
+          style={{
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          💡 <strong>Tip:</strong> Review the generated templates before deploying. You can further
+          customize them for your specific environment.
+        </div>
+      )}
     </WizardLayout>
   );
 }

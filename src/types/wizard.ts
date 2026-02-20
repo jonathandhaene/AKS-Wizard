@@ -20,6 +20,9 @@ export interface NodePool {
   mode: 'System' | 'User';
 }
 
+export type AksMode = 'Standard' | 'Automatic';
+export type AutoUpgradeChannel = 'none' | 'patch' | 'stable' | 'rapid' | 'node-image';
+
 export interface WizardConfig {
   // Cluster Basics
   subscriptionId: string;
@@ -27,6 +30,7 @@ export interface WizardConfig {
   clusterName: string;
   region: string;
   kubernetesVersion: string;
+  aksMode: AksMode;
 
   // Node Pools
   systemNodePool: NodePool;
@@ -45,7 +49,7 @@ export interface WizardConfig {
   azureAdTenantId: string;
   enablePodIdentity: boolean;
   networkPolicy: 'None' | 'azure' | 'calico';
-  enableAutoUpgrade: boolean;
+  autoUpgradeChannel: AutoUpgradeChannel;
 
   // Monitoring
   enableContainerInsights: boolean;
@@ -59,6 +63,8 @@ export interface WizardConfig {
   enableKeyVaultProvider: boolean;
   enableKeda: boolean;
   enableDapr: boolean;
+  enableAcrIntegration: boolean;
+  containerRegistryName: string;
 }
 
 export const defaultConfig: WizardConfig = {
@@ -66,7 +72,8 @@ export const defaultConfig: WizardConfig = {
   resourceGroupName: '',
   clusterName: '',
   region: 'eastus',
-  kubernetesVersion: '1.29.x',
+  kubernetesVersion: '1.31.x',
+  aksMode: 'Standard',
 
   systemNodePool: {
     name: 'system',
@@ -90,7 +97,7 @@ export const defaultConfig: WizardConfig = {
   azureAdTenantId: '',
   enablePodIdentity: false,
   networkPolicy: 'None',
-  enableAutoUpgrade: false,
+  autoUpgradeChannel: 'patch',
 
   enableContainerInsights: true,
   logAnalyticsWorkspaceId: '',
@@ -102,10 +109,13 @@ export const defaultConfig: WizardConfig = {
   enableKeyVaultProvider: false,
   enableKeda: false,
   enableDapr: false,
+  enableAcrIntegration: false,
+  containerRegistryName: '',
 };
 
 export const STEPS = [
   { id: 'welcome', label: 'Welcome' },
+  { id: 'maturity', label: 'Readiness' },
   { id: 'basics', label: 'Basics' },
   { id: 'nodes', label: 'Node Pools' },
   { id: 'networking', label: 'Networking' },

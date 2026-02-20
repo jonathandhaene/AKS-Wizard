@@ -56,10 +56,10 @@ export function generateBicep(cfg: WizardConfig): string {
     }`
     : '';
 
-  const autoUpgrade = cfg.enableAutoUpgrade
+  const autoUpgrade = cfg.autoUpgradeChannel !== 'none'
     ? `
     autoUpgradeProfile: {
-      upgradeChannel: 'stable'
+      upgradeChannel: '${cfg.autoUpgradeChannel}'
     }`
     : '';
 
@@ -151,5 +151,17 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-01-01' = {
 
 output clusterName string = aksCluster.name
 output controlPlaneFQDN string = aksCluster.properties.fqdn
-`;
+${cfg.enableAcrIntegration && cfg.containerRegistryName ? `
+// Grant AcrPull role to the cluster managed identity
+resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aksCluster.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  scope: resourceId('Microsoft.ContainerRegistry/registries', '${cfg.containerRegistryName}')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+    principalId: aksCluster.properties.identityProfile.kubeletIdentity.objectId
+    principalType: 'ServicePrincipal'
+  }
+}
+` : ''}`;
+
 }

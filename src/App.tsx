@@ -1,6 +1,7 @@
 import { WizardProvider, useWizard } from './contexts/WizardContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { Welcome } from './steps/Welcome';
+import { MaturityAssessment } from './steps/MaturityAssessment';
 import { ClusterBasics } from './steps/ClusterBasics';
 import { NodePools } from './steps/NodePools';
 import { Networking } from './steps/Networking';
@@ -14,6 +15,7 @@ import { GitHub } from './steps/GitHub';
 
 const STEP_COMPONENTS = [
   Welcome,
+  MaturityAssessment,
   ClusterBasics,
   NodePools,
   Networking,
