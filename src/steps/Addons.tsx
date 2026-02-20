@@ -40,6 +40,13 @@ const ADDONS = [
     tooltip:
       'Dapr provides building blocks for microservices: pub/sub, state management, service invocation, and more.',
   },
+  {
+    key: 'enableAcrIntegration' as const,
+    label: 'Azure Container Registry Integration',
+    emoji: '📦',
+    tooltip:
+      'Attach an Azure Container Registry to the cluster so nodes can pull images without separate credentials. Requires a registry name below.',
+  },
 ];
 
 export function Addons() {
@@ -107,6 +114,29 @@ export function Addons() {
           );
         })}
       </div>
+
+      {config.enableAcrIntegration && (
+        <div className="mt-4">
+          <label className="field-label">
+            Container Registry Name{' '}
+            <Tooltip content="The name of your Azure Container Registry (without .azurecr.io). The wizard will generate the role assignment to allow the cluster to pull images.">
+              <span className="ml-1 text-xs cursor-help" style={{ color: 'var(--info)' }}>
+                ⓘ
+              </span>
+            </Tooltip>
+          </label>
+          <input
+            className="field-input"
+            placeholder="myregistry"
+            value={config.containerRegistryName}
+            onChange={(e) => updateConfig({ containerRegistryName: e.target.value })}
+          />
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            The generated templates will include an ACR pull role assignment for the cluster's
+            managed identity.
+          </p>
+        </div>
+      )}
     </WizardLayout>
   );
 }

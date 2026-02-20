@@ -97,13 +97,59 @@ export function Security() {
           label="Enable Pod Identity"
           tooltip="Allows pods to use Azure Managed Identities to access Azure resources without storing credentials."
         />
+      </div>
 
-        <Toggle
-          enabled={config.enableAutoUpgrade}
-          onToggle={() => updateConfig({ enableAutoUpgrade: !config.enableAutoUpgrade })}
-          label="Enable Cluster Auto-Upgrade"
-          tooltip="Automatically upgrades your cluster to the latest supported Kubernetes version."
-        />
+      <div className="mt-5">
+        <label className="field-label">
+          Auto-Upgrade Channel{' '}
+          <Tooltip content="Controls how AKS automatically upgrades your cluster. 'patch' upgrades to the latest patch version, 'stable' upgrades to the latest stable minor version, 'rapid' upgrades to the latest GA release, 'node-image' only upgrades node OS images.">
+            <span className="ml-1 text-xs cursor-help" style={{ color: 'var(--info)' }}>
+              ⓘ
+            </span>
+          </Tooltip>
+        </label>
+        <div className="flex gap-2 flex-wrap">
+          {([
+            { value: 'none', label: '🚫 None', desc: 'Manual upgrades only' },
+            { value: 'patch', label: '🔒 Patch', desc: 'Auto patch versions (recommended)' },
+            { value: 'stable', label: '✅ Stable', desc: 'Latest stable minor version' },
+            { value: 'rapid', label: '⚡ Rapid', desc: 'Latest GA release' },
+            { value: 'node-image', label: '🖼️ Node Image', desc: 'Node OS images only' },
+          ] as const).map((ch) => (
+            <button
+              key={ch.value}
+              onClick={() => updateConfig({ autoUpgradeChannel: ch.value })}
+              title={ch.desc}
+              className="flex-1 py-2 px-3 rounded font-medium text-sm min-w-[100px]"
+              style={{
+                background:
+                  config.autoUpgradeChannel === ch.value
+                    ? 'var(--accent)'
+                    : 'var(--bg-secondary)',
+                color:
+                  config.autoUpgradeChannel === ch.value
+                    ? 'var(--accent-text)'
+                    : 'var(--text-primary)',
+                border: `2px solid ${config.autoUpgradeChannel === ch.value ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: 'var(--radius)',
+              }}
+            >
+              {ch.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+          {config.autoUpgradeChannel === 'none' &&
+            'No automatic upgrades. You must manually trigger upgrades — ensure you stay within AKS supported version window.'}
+          {config.autoUpgradeChannel === 'patch' &&
+            'Recommended for production: automatically applies the latest patch of your current minor version.'}
+          {config.autoUpgradeChannel === 'stable' &&
+            'Upgrades to the latest stable minor release, which lags the newest release by one minor version.'}
+          {config.autoUpgradeChannel === 'rapid' &&
+            'Upgrades to the newest generally available release as soon as available.'}
+          {config.autoUpgradeChannel === 'node-image' &&
+            'Only upgrades node OS images (security patches) without changing the Kubernetes version.'}
+        </p>
       </div>
 
       <div className="mt-5">

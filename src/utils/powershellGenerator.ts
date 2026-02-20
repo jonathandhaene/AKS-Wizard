@@ -5,7 +5,11 @@ export function generatePowerShell(cfg: WizardConfig): string {
   const rg = cfg.resourceGroupName || 'my-resource-group';
   const region = cfg.region || 'eastus';
   const dnsPrefix = cfg.dnsPrefix || clusterName;
-  const k8sVersion = cfg.kubernetesVersion || '1.29.x';
+  const k8sVersion = cfg.kubernetesVersion || '1.31.x';
+
+  const autoUpgradeArg = cfg.autoUpgradeChannel !== 'none'
+    ? `\`\n    --auto-upgrade-channel '${cfg.autoUpgradeChannel}'`
+    : '';
 
   const autoScaleArgs = cfg.systemNodePool.enableAutoScaling
     ? `\`
@@ -33,7 +37,7 @@ export function generatePowerShell(cfg: WizardConfig): string {
     cfg.enableAzurePolicy ? '`\n    --enable-addons azure-policy' : '',
   ].filter(Boolean).join(' ');
 
-  const optionalArgs = [rbacArg, aadArgs, networkPolicyArg, monitoringArg, addonsArg]
+  const optionalArgs = [rbacArg, aadArgs, networkPolicyArg, autoUpgradeArg, monitoringArg, addonsArg]
     .filter(Boolean)
     .join('');
 
@@ -139,7 +143,14 @@ az aks get-credentials \`
 # ── 6. Verify cluster ─────────────────────────────────────────────────────────
 Write-Host "✅ Cluster ready! Listing nodes:" -ForegroundColor Green
 kubectl get nodes
-
+${cfg.enableAcrIntegration && cfg.containerRegistryName ? `
+# ── 7. Attach Azure Container Registry ───────────────────────────────────────
+Write-Host "📦 Attaching ACR '${cfg.containerRegistryName}' to cluster..." -ForegroundColor Cyan
+az aks update \`
+    --resource-group $ResourceGroup \`
+    --name $ClusterName \`
+    --attach-acr '${cfg.containerRegistryName}'
+` : ''}
 Write-Host ""
 Write-Host "🎉 AKS cluster '$ClusterName' deployed successfully!" -ForegroundColor Green
 `;

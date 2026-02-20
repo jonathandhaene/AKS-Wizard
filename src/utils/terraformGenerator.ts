@@ -34,9 +34,9 @@ export function generateTerraform(cfg: WizardConfig): string {
   }`
     : '';
 
-  const autoUpgradeBlock = cfg.enableAutoUpgrade
+  const autoUpgradeBlock = cfg.autoUpgradeChannel !== 'none'
     ? `
-  automatic_channel_upgrade = "stable"`
+  automatic_channel_upgrade = "${cfg.autoUpgradeChannel}"`
     : '';
 
   const omsBlock = cfg.enableContainerInsights
@@ -141,7 +141,14 @@ ${omsBlock}${keyVaultBlock}
 }
 ${aadBlock ? `\n# Azure AD RBAC\n${aadBlock.trim()}` : ''}
 ${userPoolResources}
-output "kube_config" {
+${cfg.enableAcrIntegration && cfg.containerRegistryName ? `# Grant AcrPull role to the cluster's kubelet identity
+resource "azurerm_role_assignment" "acr_pull" {
+  principal_id                     = azurerm_kubernetes_cluster.aks.kubelet_identity[0].object_id
+  role_definition_name             = "AcrPull"
+  scope                            = "/subscriptions/${cfg.subscriptionId}/resourceGroups/${cfg.resourceGroupName}/providers/Microsoft.ContainerRegistry/registries/${cfg.containerRegistryName}"
+  skip_service_principal_aad_check = true
+}
+` : ''}output "kube_config" {
   value     = azurerm_kubernetes_cluster.aks.kube_config_raw
   sensitive = true
 }

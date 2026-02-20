@@ -18,7 +18,7 @@ const REGIONS = [
   { value: 'brazilsouth', label: 'Brazil South' },
 ];
 
-const K8S_VERSIONS = ['1.29.x', '1.28.x', '1.27.x'];
+const K8S_VERSIONS = ['1.31.x', '1.30.x', '1.29.x'];
 
 export function ClusterBasics() {
   const { config, updateConfig } = useWizard();
@@ -34,10 +34,46 @@ export function ClusterBasics() {
 
       <InfoBox variant="info" title="What is AKS?">
         Azure Kubernetes Service (AKS) is a managed container orchestration service. Azure handles
-        the control plane — you only manage the worker nodes.
+        the control plane — you only manage the worker nodes. Choose{' '}
+        <strong>AKS Automatic</strong> for a fully managed experience or{' '}
+        <strong>AKS Standard</strong> for complete control over cluster configuration.
       </InfoBox>
 
       <div className="space-y-5">
+        {/* AKS Mode */}
+        <div>
+          <label className="field-label">
+            AKS Mode{' '}
+            <Tooltip content="AKS Automatic manages upgrades, node provisioning, and security configurations automatically. AKS Standard gives your platform team full control.">
+              <span className="ml-1 text-xs cursor-help" style={{ color: 'var(--info)' }}>
+                ⓘ
+              </span>
+            </Tooltip>
+          </label>
+          <div className="flex gap-3 flex-wrap">
+            {(['Standard', 'Automatic'] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => updateConfig({ aksMode: mode })}
+                className="flex-1 py-2 px-4 rounded font-medium text-sm min-w-[140px]"
+                style={{
+                  background: config.aksMode === mode ? 'var(--accent)' : 'var(--bg-secondary)',
+                  color: config.aksMode === mode ? 'var(--accent-text)' : 'var(--text-primary)',
+                  border: `2px solid ${config.aksMode === mode ? 'var(--accent)' : 'var(--border)'}`,
+                  borderRadius: 'var(--radius)',
+                }}
+              >
+                {mode === 'Automatic' ? '🤖 AKS Automatic' : '🔧 AKS Standard'}
+              </button>
+            ))}
+          </div>
+          {config.aksMode === 'Automatic' && (
+            <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+              AKS Automatic: Azure manages node pools, upgrades, and security hardening. Best for
+              teams focused on application delivery.
+            </p>
+          )}
+        </div>
         {/* Subscription ID */}
         <div>
           <label className="field-label">
