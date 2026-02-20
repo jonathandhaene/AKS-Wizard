@@ -47,7 +47,7 @@ export async function saveFilesToGitHub(opts: GitHubSaveOptions): Promise<GitHub
     const sha = await getFileSha(token, owner, repo, path, branch);
     const body: Record<string, unknown> = {
       message: `chore: add AKS config ${file.name} via AKS Wizard`,
-      content: btoa(unescape(encodeURIComponent(file.content))),
+      content: btoa(String.fromCharCode(...new TextEncoder().encode(file.content))),
       branch,
     };
     if (sha) body.sha = sha;
