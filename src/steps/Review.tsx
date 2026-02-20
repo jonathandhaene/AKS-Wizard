@@ -130,6 +130,18 @@ export function Review() {
         />
 
         <Section
+          title="Pods"
+          items={[
+            ['CPU Request / Limit', `${config.podConfig.cpuRequest} / ${config.podConfig.cpuLimit}`],
+            ['Memory Request / Limit', `${config.podConfig.memoryRequest} / ${config.podConfig.memoryLimit}`],
+            ['Node Affinity', config.podConfig.nodeAffinity],
+            ['Pod Anti-Affinity', config.podConfig.podAntiAffinity !== 'none' ? `${config.podConfig.podAntiAffinity} (${config.podConfig.topologyKey})` : 'none'],
+            ['Host Network', config.podConfig.hostNetwork ? '✅ Enabled' : 'Disabled'],
+            ['DNS Policy', config.podConfig.dnsPolicy],
+          ]}
+        />
+
+        <Section
           title="Networking"
           items={[
             ['Network Plugin', config.networkPlugin],

@@ -12,13 +12,56 @@ A browser-based wizard that guides you step-by-step through configuring an Azure
 
 - **Team Readiness Assessment** – Answer six questions to get an AKS mode recommendation (Standard vs Automatic) before configuring a single setting
 - **AKS Automatic & Standard** – Choose between fully managed (Automatic) and full-control (Standard) cluster modes
-- **Step-by-step configuration** – Cluster basics, node pools, networking, security, monitoring, and add-ons
+- **Step-by-step configuration** – Cluster basics, node pools, workloads, pods, networking, security, monitoring, and add-ons
+- **AKS Pods management** – Configure resource requests/limits, node affinity rules, pod anti-affinity, and pod networking options
 - **Auto-upgrade channel selector** – Configure `none`, `patch`, `stable`, `rapid`, or `node-image` upgrade strategies
 - **Azure Container Registry integration** – Attach an ACR to your cluster with a single toggle; role assignment generated automatically
 - **Template generation** – Bicep, Terraform, and GitHub Actions CI/CD workflows generated from your choices
 - **GitHub Actions workflow** – Uses `azure/k8s-bake@v3` to render Helm charts and `azure/k8s-deploy@v5` to deploy; includes an AKS upgrade-check job
 - **PowerShell deployment script** – The Deploy step generates a ready-to-run `deploy-aks.ps1` script (no browser-based deployment)
 - **Multiple themes** – Classic, Win95, Cyberpunk, Nature, Dark, High Contrast, Microsoft Fluent, and **Paleontology** (default)
+
+## AKS Pods
+
+The **Pods** step lets you define default pod-level configuration that is reflected in the generated Kubernetes resource templates.
+
+### Resource Requests & Limits
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| CPU Request | Minimum CPU guaranteed per container | `100m` (0.1 cores) |
+| CPU Limit | Maximum CPU a container may use; throttled when exceeded | `500m` |
+| Memory Request | Minimum memory guaranteed per container | `128Mi` |
+| Memory Limit | Maximum memory; container is OOMKilled if exceeded | `512Mi` |
+
+Setting requests equal to limits gives your pod a **Guaranteed** QoS class, which is preferred for latency-sensitive workloads.
+
+### Affinity Rules
+
+**Node Affinity** controls which nodes a pod can be scheduled on based on node labels:
+
+| Mode | Behaviour |
+|------|-----------|
+| None | No constraints; scheduler places pods freely |
+| Preferred | Favour matching nodes but fall back to others if unavailable |
+| Required | Only schedule on nodes that match the label selector |
+
+**Pod Anti-Affinity** spreads replicas to improve fault tolerance:
+
+| Mode | Behaviour |
+|------|-----------|
+| None | No spreading constraints |
+| Preferred | Spread across the selected topology key when possible |
+| Required | Enforce spreading; pod stays pending if constraint cannot be met |
+
+Use `kubernetes.io/hostname` to spread across nodes or `topology.kubernetes.io/zone` to spread across availability zones.
+
+### Pod Networking Options
+
+| Option | Default | Notes |
+|--------|---------|-------|
+| Host Network | Disabled | Exposes the pod on the node's network namespace. Avoid unless required (e.g. DaemonSets). |
+| DNS Policy | `ClusterFirst` | Use `ClusterFirstWithHostNet` when Host Network is enabled. |
 
 ## AKS Automatic vs Standard
 
@@ -43,21 +86,6 @@ AKS supports fine-grained control over how and when your cluster is upgraded:
 | `stable` | Upgrades to the latest stable minor version, lagging the newest release by one minor version |
 | `rapid` | Upgrades to the newest generally available release as soon as it is available |
 | `node-image` | Only upgrades node OS images; Kubernetes version unchanged |
-
-## Themes
-
-The wizard ships with eight built-in themes selectable from the top-right corner:
-
-| Theme | Description |
-|-------|-------------|
-| 🔵 Classic | Clean light blue |
-| 🪟 Win95 | Retro Windows 95 grey |
-| 🌆 Cyberpunk | Neon dark |
-| 🌿 Nature | Soft greens |
-| 🌙 Dark | Catppuccin-inspired dark |
-| ⬛ High Contrast | WCAG AA high-contrast |
-| 🪟 Fluent | Microsoft Fluent Design |
-| 🦕 Paleontology | Earthy sandy tones *(default)* |
 
 ## Deploy to Azure – PowerShell Script
 
@@ -156,6 +184,21 @@ Enable the **Azure Container Registry Integration** toggle on the Add-ons step a
 
 AKS **add-ons** (Container Insights, Azure Policy, Key Vault Provider, HTTP Application Routing, KEDA, Dapr) are officially supported and managed by Microsoft. **Extensions** are cluster extensions installed via the Azure CLI or portal and are typically community-supported or preview features.
 
+## Themes
+
+The wizard ships with eight built-in themes selectable from the top-right corner:
+
+| Theme | Description |
+|-------|-------------|
+| 🔵 Classic | Clean light blue |
+| 🪟 Win95 | Retro Windows 95 grey |
+| 🌆 Cyberpunk | Neon dark |
+| 🌿 Nature | Soft greens |
+| 🌙 Dark | Catppuccin-inspired dark |
+| ⬛ High Contrast | WCAG AA high-contrast |
+| 🪟 Fluent | Microsoft Fluent Design |
+| 🦕 Paleontology | Earthy sandy tones *(default)* |
+
 ## Development
 
 ```bash
@@ -177,6 +220,7 @@ src/
   contexts/     – React contexts (WizardContext, ThemeContext)
   steps/        – One component per wizard step
     MaturityAssessment.tsx  – Team readiness questionnaire
+    Pods.tsx                – Pod resource limits, affinity rules, and networking
   types/        – TypeScript types (WizardConfig, AksMode, AutoUpgradeChannel, …)
   utils/        – Template generators (Bicep, Terraform, PowerShell, GitHub Actions workflow)
     githubWorkflowGenerator.ts  – GitHub Actions CI/CD pipeline with k8s-bake and ACR

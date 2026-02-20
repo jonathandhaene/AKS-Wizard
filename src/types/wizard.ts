@@ -1,6 +1,32 @@
 // ─── Wizard Configuration Types ───────────────────────────────────────────────
 
 export type WorkloadType = 'general' | 'memory-intensive' | 'compute-intensive' | 'gpu-heavy' | 'io-intensive';
+
+export type DnsPolicy = 'ClusterFirst' | 'ClusterFirstWithHostNet' | 'Default' | 'None';
+export type AffinityType = 'none' | 'required' | 'preferred';
+export type PodAntiAffinityScope = 'none' | 'preferred' | 'required';
+
+export interface PodConfig {
+  // Resource requests & limits
+  cpuRequest: string;
+  cpuLimit: string;
+  memoryRequest: string;
+  memoryLimit: string;
+
+  // Node affinity
+  nodeAffinity: AffinityType;
+  nodeSelectorKey: string;
+  nodeSelectorValue: string;
+
+  // Pod anti-affinity (spread across nodes/zones)
+  podAntiAffinity: PodAntiAffinityScope;
+  topologyKey: string;
+
+  // Networking
+  hostNetwork: boolean;
+  dnsPolicy: DnsPolicy;
+}
+
 export type TrafficLevel = 'low' | 'medium' | 'high' | 'burst';
 
 export interface WorkloadConfig {
@@ -73,6 +99,9 @@ export interface WizardConfig {
   // Workload Requirements
   workloadConfig: WorkloadConfig;
 
+  // Pods
+  podConfig: PodConfig;
+
   // Add-ons
   enableHttpApplicationRouting: boolean;
   enableAzurePolicy: boolean;
@@ -130,6 +159,20 @@ export const defaultConfig: WizardConfig = {
     enableMonitoringIntegration: false,
   },
 
+  podConfig: {
+    cpuRequest: '100m',
+    cpuLimit: '500m',
+    memoryRequest: '128Mi',
+    memoryLimit: '512Mi',
+    nodeAffinity: 'none',
+    nodeSelectorKey: '',
+    nodeSelectorValue: '',
+    podAntiAffinity: 'none',
+    topologyKey: 'kubernetes.io/hostname',
+    hostNetwork: false,
+    dnsPolicy: 'ClusterFirst',
+  },
+
   enableHttpApplicationRouting: false,
   enableAzurePolicy: false,
   enableKeyVaultProvider: false,
@@ -145,6 +188,7 @@ export const STEPS = [
   { id: 'basics', label: 'Basics' },
   { id: 'nodes', label: 'Node Pools' },
   { id: 'workload', label: 'Workloads' },
+  { id: 'pods', label: 'Pods' },
   { id: 'networking', label: 'Networking' },
   { id: 'security', label: 'Security' },
   { id: 'monitoring', label: 'Monitoring' },
