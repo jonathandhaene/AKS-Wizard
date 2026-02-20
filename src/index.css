@@ -1,0 +1,242 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Default / Classic theme ─────────────────────────────────────── */
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f3f4f6;
+  --bg-card: #ffffff;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-text: #ffffff;
+  --border: #e5e7eb;
+  --border-focus: #3b82f6;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --info: #3b82f6;
+  --radius: 0.5rem;
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+/* ── Windows 95 ───────────────────────────────────────────────────── */
+.theme-win95 {
+  --bg-primary: #c0c0c0;
+  --bg-secondary: #c0c0c0;
+  --bg-card: #c0c0c0;
+  --text-primary: #000000;
+  --text-secondary: #000000;
+  --text-muted: #444444;
+  --accent: #000080;
+  --accent-hover: #0000aa;
+  --accent-text: #ffffff;
+  --border: #808080;
+  --border-focus: #000080;
+  --success: #008000;
+  --warning: #808000;
+  --error: #800000;
+  --info: #000080;
+  --radius: 0;
+  --shadow: inset -1px -1px #000000, inset 1px 1px #ffffff, inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+/* ── Cyberpunk ────────────────────────────────────────────────────── */
+.theme-cyberpunk {
+  --bg-primary: #0d0d0d;
+  --bg-secondary: #1a1a2e;
+  --bg-card: #16213e;
+  --text-primary: #00ffff;
+  --text-secondary: #ff00ff;
+  --text-muted: #888888;
+  --accent: #ff00ff;
+  --accent-hover: #cc00cc;
+  --accent-text: #0d0d0d;
+  --border: #00ffff44;
+  --border-focus: #ff00ff;
+  --success: #00ff41;
+  --warning: #ffff00;
+  --error: #ff0040;
+  --info: #00ffff;
+  --radius: 0.25rem;
+  --shadow: 0 0 10px #ff00ff66, 0 0 20px #00ffff33;
+}
+
+/* ── Nature ───────────────────────────────────────────────────────── */
+.theme-nature {
+  --bg-primary: #f0f7ee;
+  --bg-secondary: #e8f5e0;
+  --bg-card: #ffffff;
+  --text-primary: #2d4a22;
+  --text-secondary: #4a7c3f;
+  --text-muted: #7aab6d;
+  --accent: #4caf50;
+  --accent-hover: #388e3c;
+  --accent-text: #ffffff;
+  --border: #c8e6c9;
+  --border-focus: #4caf50;
+  --success: #2e7d32;
+  --warning: #f9a825;
+  --error: #c62828;
+  --info: #1565c0;
+  --radius: 0.75rem;
+  --shadow: 0 2px 8px 0 rgb(76 175 80 / 0.15);
+}
+
+/* ── Dark ─────────────────────────────────────────────────────────── */
+.theme-dark {
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #181825;
+  --bg-card: #24273a;
+  --text-primary: #cad3f5;
+  --text-secondary: #a5adcb;
+  --text-muted: #6e738d;
+  --accent: #8aadf4;
+  --accent-hover: #7193eb;
+  --accent-text: #181825;
+  --border: #363a4f;
+  --border-focus: #8aadf4;
+  --success: #a6da95;
+  --warning: #eed49f;
+  --error: #ed8796;
+  --info: #8aadf4;
+  --radius: 0.5rem;
+  --shadow: 0 4px 16px 0 rgb(0 0 0 / 0.4);
+}
+
+/* ── High Contrast ────────────────────────────────────────────────── */
+.theme-high-contrast {
+  --bg-primary: #000000;
+  --bg-secondary: #000000;
+  --bg-card: #000000;
+  --text-primary: #ffffff;
+  --text-secondary: #ffffff;
+  --text-muted: #cccccc;
+  --accent: #ffff00;
+  --accent-hover: #cccc00;
+  --accent-text: #000000;
+  --border: #ffffff;
+  --border-focus: #ffff00;
+  --success: #00ff00;
+  --warning: #ffff00;
+  --error: #ff0000;
+  --info: #00ffff;
+  --radius: 0;
+  --shadow: none;
+}
+
+/* ── Global base styles ───────────────────────────────────────────── */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ── Wizard utility classes ───────────────────────────────────────── */
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+}
+
+.btn-primary {
+  background-color: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.625rem 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.btn-primary:hover {
+  background-color: var(--accent-hover);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.625rem 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.btn-secondary:hover {
+  background-color: var(--border);
+}
+
+.field-input {
+  width: 100%;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.field-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--border-focus) 20%, transparent);
+}
+
+.field-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.375rem;
+}
+
+.section-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+}
+
+/* Win95 special overrides */
+.theme-win95 .card {
+  border: none;
+  box-shadow: var(--shadow);
+}
+.theme-win95 .btn-primary {
+  box-shadow: var(--shadow);
+}
+.theme-win95 .field-input {
+  box-shadow: inset 1px 1px #808080, inset -1px -1px #ffffff;
+}
+
+/* Cyberpunk glow effects */
+.theme-cyberpunk .card {
+  border-color: var(--border);
+  box-shadow: var(--shadow);
+}
+.theme-cyberpunk .btn-primary {
+  box-shadow: 0 0 8px var(--accent);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Code blocks */
+pre, code {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.8125rem;
+}
