@@ -234,6 +234,26 @@ export function Review() {
           title="Deployment"
           items={[['Deployment Strategy', config.deploymentStrategy]]}
         />
+
+        <Section
+          title="Multi-Region"
+          items={[
+            ['Multi-Region', config.multiRegion.enableMultiRegion ? '✅ Enabled' : 'Disabled'],
+            ...(config.multiRegion.enableMultiRegion
+              ? ([
+                  ['Secondary Regions', config.multiRegion.secondaryRegions.join(', ') || '—'],
+                  ['Azure Front Door', config.multiRegion.enableFrontDoor ? '✅ Enabled' : 'Disabled'],
+                  ...(config.multiRegion.enableFrontDoor
+                    ? ([
+                        ['Front Door SKU', config.multiRegion.frontDoorSkuName],
+                        ['WAF', config.multiRegion.enableWaf ? '✅ Enabled' : 'Disabled'],
+                        ['Health Probes', config.multiRegion.enableHealthProbes ? '✅ Enabled' : 'Disabled'],
+                      ] as [string, string][])
+                    : []),
+                ] as [string, string][])
+              : []),
+          ]}
+        />
       </div>
 
       {!allOk && (

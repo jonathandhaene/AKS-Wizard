@@ -10,6 +10,7 @@ import { Networking } from './steps/Networking';
 import { Security } from './steps/Security';
 import { Monitoring } from './steps/Monitoring';
 import { Addons } from './steps/Addons';
+import { MultiRegion } from './steps/MultiRegion';
 import { Storage } from './steps/Storage';
 import { Review } from './steps/Review';
 import { Templates } from './steps/Templates';
@@ -27,6 +28,7 @@ const STEP_COMPONENTS = [
   Security,
   Monitoring,
   Addons,
+  MultiRegion,
   Storage,
   Review,
   Templates,

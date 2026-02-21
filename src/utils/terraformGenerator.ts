@@ -148,7 +148,7 @@ resource "azurerm_role_assignment" "acr_pull" {
   scope                            = "/subscriptions/${cfg.subscriptionId}/resourceGroups/${cfg.resourceGroupName}/providers/Microsoft.ContainerRegistry/registries/${cfg.containerRegistryName}"
   skip_service_principal_aad_check = true
 }
-` : ''}output "kube_config" {
+` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorTerraform(cfg) : ''}output "kube_config" {
   value     = azurerm_kubernetes_cluster.aks.kube_config_raw
   sensitive = true
 }
@@ -156,5 +156,189 @@ resource "azurerm_role_assignment" "acr_pull" {
 output "cluster_endpoint" {
   value = azurerm_kubernetes_cluster.aks.kube_config[0].host
 }
+`;
+}
+
+function generateFrontDoorTerraform(cfg: WizardConfig): string {
+  const mr = cfg.multiRegion;
+  const profileName = `${cfg.clusterName || 'aks'}-afd`;
+  const allRegions = [cfg.region, ...mr.secondaryRegions];
+
+  const wafResources = mr.enableWaf
+    ? `
+# Web Application Firewall Policy
+resource "azurerm_cdn_frontdoor_firewall_policy" "waf" {
+  name                              = "${profileName.replace(/-/g, '')}waf"
+  resource_group_name               = azurerm_resource_group.aks_rg.name
+  sku_name                          = "${mr.frontDoorSkuName}"
+  enabled                           = true
+  mode                              = "Prevention"
+${
+  mr.frontDoorSkuName === 'Premium_AzureFrontDoor'
+    ? `
+  managed_rule {
+    type    = "Microsoft_DefaultRuleSet"
+    version = "2.1"
+    action  = "Block"
+  }
+
+  managed_rule {
+    type    = "Microsoft_BotManagerRuleSet"
+    version = "1.0"
+    action  = "Block"
+  }
+`
+    : ''
+}}
+`
+    : '';
+
+  const secondaryClusterResources = mr.secondaryRegions
+    .map(
+      (region) => `
+# Secondary AKS cluster — ${region}
+resource "azurerm_resource_group" "aks_rg_${region.replace(/-/g, '_')}" {
+  name     = "${cfg.resourceGroupName}-${region}"
+  location = "${region}"
+}
+
+resource "azurerm_kubernetes_cluster" "aks_${region.replace(/-/g, '_')}" {
+  name                = "${cfg.clusterName || 'aks'}-${region}"
+  location            = azurerm_resource_group.aks_rg_${region.replace(/-/g, '_')}.location
+  resource_group_name = azurerm_resource_group.aks_rg_${region.replace(/-/g, '_')}.name
+  dns_prefix          = "${cfg.dnsPrefix || cfg.clusterName || 'my-aks'}-${region}"
+  kubernetes_version  = "${cfg.kubernetesVersion}"
+
+  default_node_pool {
+    name    = "${cfg.systemNodePool.name}"
+    vm_size = "${cfg.systemNodePool.vmSize}"${
+      cfg.systemNodePool.enableAutoScaling
+        ? `
+    enable_auto_scaling = true
+    min_count           = ${cfg.systemNodePool.minNodes}
+    max_count           = ${cfg.systemNodePool.maxNodes}`
+        : `
+    enable_auto_scaling = false
+    node_count          = ${cfg.systemNodePool.nodeCount}`
+    }
+  }
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  tags = {
+    Environment = "Production"
+    ManagedBy   = "AKS-Wizard"
+    Region      = "${region}"
+  }
+}
+
+output "cluster_endpoint_${region.replace(/-/g, '_')}" {
+  value = azurerm_kubernetes_cluster.aks_${region.replace(/-/g, '_')}.kube_config[0].host
+}
+`,
+    )
+    .join('');
+
+  const originsBlock = allRegions
+    .map(
+      (region, idx) => `
+# TODO: Replace host_name and origin_host_header with the actual ingress controller IP/hostname for ${region}
+resource "azurerm_cdn_frontdoor_origin" "aks_${region.replace(/-/g, '_')}" {
+  name                          = "aks-origin-${region}"
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.aks_origins.id
+  enabled                       = true
+  host_name                     = "replace-with-ingress-ip-${region}.nip.io"
+  http_port                     = 80
+  https_port                    = 443
+  origin_host_header            = "replace-with-ingress-ip-${region}.nip.io"
+  priority                      = ${idx + 1}
+  weight                        = ${idx === 0 ? 1000 : 500}
+}
+`,
+    )
+    .join('');
+
+  const healthProbeBlock = mr.enableHealthProbes
+    ? `
+  health_probe {
+    interval_in_seconds = 30
+    path                = "/healthz"
+    protocol            = "Https"
+    request_type        = "HEAD"
+  }
+`
+    : '';
+
+  const securityPolicyBlock = mr.enableWaf
+    ? `
+resource "azurerm_cdn_frontdoor_security_policy" "waf_policy" {
+  name                     = "waf-security-policy"
+  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.afd.id
+
+  security_policies {
+    firewall {
+      cdn_frontdoor_firewall_policy_id = azurerm_cdn_frontdoor_firewall_policy.waf.id
+
+      association {
+        domain {
+          cdn_frontdoor_domain_id = azurerm_cdn_frontdoor_endpoint.afd_endpoint.id
+        }
+        patterns_to_match = ["/*"]
+      }
+    }
+  }
+}
+`
+    : '';
+
+  return `
+# ─── Azure Front Door ──────────────────────────────────────────────────────────
+resource "azurerm_cdn_frontdoor_profile" "afd" {
+  name                = "${profileName}"
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  sku_name            = "${mr.frontDoorSkuName}"
+
+  tags = {
+    Environment = "Production"
+    ManagedBy   = "AKS-Wizard"
+  }
+}
+
+resource "azurerm_cdn_frontdoor_endpoint" "afd_endpoint" {
+  name                     = "${profileName}-endpoint"
+  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.afd.id
+  enabled                  = true
+}
+
+resource "azurerm_cdn_frontdoor_origin_group" "aks_origins" {
+  name                     = "aks-origin-group"
+  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.afd.id
+
+  load_balancing {
+    sample_size                        = 4
+    successful_samples_required        = 3
+    additional_latency_in_milliseconds = 50
+  }
+${healthProbeBlock}}
+${originsBlock}
+resource "azurerm_cdn_frontdoor_route" "default_route" {
+  name                          = "default-route"
+  cdn_frontdoor_endpoint_id     = azurerm_cdn_frontdoor_endpoint.afd_endpoint.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.aks_origins.id
+  cdn_frontdoor_origin_ids      = [${allRegions.map((r) => `azurerm_cdn_frontdoor_origin.aks_${r.replace(/-/g, '_')}.id`).join(', ')}]
+  enabled                       = true
+  forwarding_protocol           = "HttpsOnly"
+  https_redirect_enabled        = true
+  patterns_to_match             = ["/*"]
+  supported_protocols           = ["Http", "Https"]
+  link_to_default_domain        = true
+}
+${wafResources}${securityPolicyBlock}
+output "frontdoor_endpoint" {
+  value = azurerm_cdn_frontdoor_endpoint.afd_endpoint.host_name
+}
+${secondaryClusterResources}
 `;
 }
