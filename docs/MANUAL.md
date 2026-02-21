@@ -1104,6 +1104,8 @@ resource "azurerm_cdn_frontdoor_origin_group" "aks" {
 
 Azure API Management (APIM) is a fully managed API gateway service that sits in front of your AKS-hosted APIs. In a multi-region, always-on architecture, APIM acts as the centralised plane for API security, rate limiting, policy enforcement, versioning, and developer onboarding — while Azure Front Door handles global traffic routing to the nearest healthy APIM or AKS endpoint.
 
+The Wizard provisions APIM using the **v2 service tiers** (BasicV2, StandardV2, PremiumV2), which are the current-generation tiers offering faster provisioning (minutes instead of hours), zone redundancy, and improved VNet injection support compared to the legacy Basic/Standard/Premium tiers.
+
 #### What you see
 
 ```
@@ -1117,14 +1119,14 @@ Azure API Management (APIM)
 (When enabled, the APIM SKU selector appears:)
 
 APIM SKU  ⓘ
-[ 🧪 Developer   No SLA · dev/test only             ]
-[ 📦 Basic        SLA · low-traffic production       ]
-[ ⭐ Standard     SLA · higher throughput             ]
-[ 💎 Premium      Multi-region · VNET · Private AKS  ]
+[ 🧪 Developer    No SLA · dev/test only                    ]
+[ 📦 Basic v2     SLA · fast provisioning · low-traffic     ]
+[ ⭐ Standard v2  SLA · zone redundancy · higher throughput  ]
+[ 💎 Premium v2   Multi-region · VNET inject · Private AKS  ]
 
 ⚠️ Developer SKU has no SLA
    The Developer SKU is not suitable for production workloads.
-   Upgrade to Basic, Standard, or Premium for an SLA-backed gateway.
+   Upgrade to Basic v2, Standard v2, or Premium v2 for an SLA-backed gateway.
 
 Publisher Email  ⓘ  [ admin@contoso.com ]
 ```
@@ -1139,14 +1141,16 @@ Publisher Email  ⓘ  [ admin@contoso.com ]
 
 #### SKU Comparison
 
-| SKU | SLA | Multi-region | VNET Integration | Recommended for |
-|-----|-----|--------------|-----------------|-----------------|
-| **Developer** | ❌ None | ❌ | Internal only | Dev/test environments |
-| **Basic** | ✅ 99.95% | ❌ | Internal only | Low-traffic production APIs |
-| **Standard** | ✅ 99.95% | ❌ | Internal only | Mid-traffic production APIs |
-| **Premium** | ✅ 99.99% | ✅ | Internal + External | High-traffic, multi-region, private AKS |
+The Wizard uses the **APIM v2 service tiers** for all production SKUs. The v2 tiers provision in minutes (vs. up to 45 minutes for legacy tiers), support availability zone redundancy, and provide VNet injection (replacing the legacy VNet integration model).
 
-> **Production recommendation:** Use **Premium** SKU when APIM is combined with a multi-region AKS deployment, as it supports multi-region gateway deployments and Virtual Network integration for private AKS clusters.
+| SKU | SLA | Multi-region | Zone Redundancy | VNet Support | Recommended for |
+|-----|-----|--------------|-----------------|--------------|-----------------|
+| **Developer** | ❌ None | ❌ | ❌ | Internal only | Dev/test environments only |
+| **BasicV2** | ✅ 99.95% | ❌ | ❌ | VNet injection | Low-traffic production APIs |
+| **StandardV2** | ✅ 99.95% | ❌ | ✅ | VNet injection | Mid-traffic production APIs |
+| **PremiumV2** | ✅ 99.99% | ✅ | ✅ | VNet injection | High-traffic, multi-region, private AKS |
+
+> **Production recommendation:** Use **PremiumV2** SKU when APIM is combined with a multi-region AKS deployment, as it supports multi-region gateway deployments and VNet injection for private AKS clusters. Use **StandardV2** for single-region production deployments that require zone redundancy.
 
 #### Architecture with APIM
 
@@ -1194,13 +1198,14 @@ APIM provides the following capabilities at the gateway layer:
 
 1. **Enable Multi-Region Deployment** (this step) and select at least one secondary region.
 2. **Enable Azure API Management** and choose a SKU:
-   - Use **Premium** for production multi-region deployments (supports multi-region gateways and VNET integration).
+   - Use **PremiumV2** for production multi-region deployments (supports multi-region gateways and VNet injection).
+   - Use **StandardV2** for single-region production deployments requiring zone redundancy.
    - Use **Developer** for initial development and testing only.
 3. **After generating templates**, complete the following manual steps:
    a. Set `publisherEmail` and `publisherName` in the generated template to your organisation's values.
    b. Import your API definitions (OpenAPI / WSDL / GraphQL) into APIM via the Azure portal or the `az apim api import` CLI command.
    c. Configure **backend** resources in APIM pointing to each AKS ingress controller hostname or internal load balancer IP per region.
-   d. If using **Premium** SKU with multi-region: add APIM gateway units in each secondary region via `az apim update --add additionalLocations`.
+   d. If using **PremiumV2** SKU with multi-region: add APIM gateway units in each secondary region via `az apim update --add additionalLocations`.
    e. Configure **named values** or **Key Vault references** in APIM for any secrets (e.g., backend API keys, JWT signing keys).
 4. **Point Azure Front Door** origins to the APIM gateway URL(s) instead of directly to AKS ingress IPs to centralise traffic policy enforcement.
 
@@ -1211,11 +1216,11 @@ When multi-region and APIM are enabled, the wizard appends the following resourc
 **Bicep (excerpt)**
 
 ```bicep
-resource apimService 'Microsoft.ApiManagement/service@2023-03-01-preview' = {
+resource apimService 'Microsoft.ApiManagement/service@2024-05-01' = {
   name: '${clusterName}-apim'
   location: location
   sku: {
-    name: 'Developer'
+    name: 'PremiumV2'
     capacity: 1
   }
   properties: {
@@ -1241,7 +1246,7 @@ resource "azurerm_api_management" "apim" {
   resource_group_name = azurerm_resource_group.aks_rg.name
   publisher_name      = "${var.cluster_name}"
   publisher_email     = "admin@contoso.com"
-  sku_name            = "Developer_1"
+  sku_name            = "PremiumV2_1"
 
   tags = {
     Environment = "Production"
@@ -1254,7 +1259,7 @@ output "apim_gateway_url" {
 }
 ```
 
-> **Note:** The `publisherEmail` and `publisherName` fields are placeholder values. Replace them with your organisation's details before deploying. For the Premium SKU, update `sku_name` to `"Premium_1"` (Terraform) or `name: 'Premium'` (Bicep) and increase `capacity` to match your throughput requirements.
+> **Note:** The `publisherEmail` and `publisherName` fields are placeholder values. Replace them with your organisation's details before deploying. For the PremiumV2 SKU, increase `capacity` (Bicep) or the numeric suffix in `sku_name` (Terraform, e.g. `"PremiumV2_2"`) to match your throughput requirements.
 
 ### Official References
 
@@ -1271,6 +1276,7 @@ output "apim_gateway_url" {
 - [Azure Traffic Manager overview](https://learn.microsoft.com/azure/traffic-manager/traffic-manager-overview)
 - [Azure Chaos Studio overview](https://learn.microsoft.com/azure/chaos-studio/chaos-studio-overview)
 - [Azure API Management overview](https://learn.microsoft.com/azure/api-management/api-management-key-concepts)
+- [APIM v2 service tiers overview](https://learn.microsoft.com/azure/api-management/v2-service-tiers-overview)
 - [APIM with AKS](https://learn.microsoft.com/azure/api-management/api-management-kubernetes)
 - [APIM SKU comparison](https://learn.microsoft.com/azure/api-management/api-management-features)
 - [APIM multi-region deployment](https://learn.microsoft.com/azure/api-management/api-management-howto-deploy-multi-region)
@@ -1917,7 +1923,7 @@ The table below summarises every configurable field in the wizard, its default v
 | Term | Definition |
 |------|-----------|
 | **Always-On Architecture** | A system design where the service remains available across regional failures, typically achieved by running redundant instances in multiple Azure regions behind Azure Front Door. |
-| **APIM** | Azure API Management — a fully managed API gateway that provides rate limiting, authentication, versioning, and a developer portal for APIs exposed by AKS services. |
+| **APIM** | Azure API Management — a fully managed API gateway that provides rate limiting, authentication, versioning, and a developer portal for APIs exposed by AKS services. The Wizard uses the v2 service tiers (BasicV2, StandardV2, PremiumV2) which offer faster provisioning, zone redundancy, and VNet injection. |
 | **Azure Chaos Studio** | An Azure service for fault injection and resilience testing, allowing you to simulate regional outages, VM failures, and network disruptions in a controlled way. |
 | **Azure Cosmos DB** | A globally distributed, multi-model database service that supports multi-region writes, five consistency levels, and a 99.999% SLA when multi-region writes are enabled. |
 | **Azure Front Door** | A global CDN and application delivery network (ADN) from Microsoft that provides intelligent traffic routing, SSL termination, WAF, and DDoS protection. |
@@ -1974,6 +1980,7 @@ The table below summarises every configurable field in the wizard, its default v
 - [Azure Front Door health probes](https://learn.microsoft.com/azure/frontdoor/health-probes)
 - [Azure Front Door SKU comparison](https://learn.microsoft.com/azure/frontdoor/standard-premium/overview)
 - [Azure API Management overview](https://learn.microsoft.com/azure/api-management/api-management-key-concepts)
+- [APIM v2 service tiers overview](https://learn.microsoft.com/azure/api-management/v2-service-tiers-overview)
 - [APIM with AKS](https://learn.microsoft.com/azure/api-management/api-management-kubernetes)
 - [APIM SKU comparison](https://learn.microsoft.com/azure/api-management/api-management-features)
 - [APIM multi-region deployment](https://learn.microsoft.com/azure/api-management/api-management-howto-deploy-multi-region)

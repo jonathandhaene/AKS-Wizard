@@ -44,7 +44,7 @@ export interface WorkloadConfig {
   enableMonitoringIntegration: boolean;
 }
 
-export type ApimSkuName = 'Developer' | 'Basic' | 'Standard' | 'Premium';
+export type ApimSkuName = 'Developer' | 'BasicV2' | 'StandardV2' | 'PremiumV2';
 
 export interface MultiRegionConfig {
   enableMultiRegion: boolean;

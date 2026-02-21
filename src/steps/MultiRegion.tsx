@@ -330,7 +330,7 @@ export function MultiRegion() {
               <div className="pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
                 <label className="field-label">
                   APIM SKU{' '}
-                  <Tooltip content="Developer: no SLA, ideal for dev/test. Basic/Standard: SLA-backed, suitable for production APIs. Premium: multi-region VNET integration — required for private AKS backends.">
+                  <Tooltip content="Developer: no SLA, ideal for dev/test. BasicV2/StandardV2: SLA-backed v2 tiers with faster provisioning. PremiumV2: multi-region, zone redundancy, VNET injection — required for private AKS backends.">
                     <span className="ml-1 text-xs cursor-help" style={{ color: 'var(--info)' }}>ⓘ</span>
                   </Tooltip>
                 </label>
@@ -338,9 +338,9 @@ export function MultiRegion() {
                   {(
                     [
                       { value: 'Developer', label: '🧪 Developer', desc: 'No SLA · dev/test only' },
-                      { value: 'Basic', label: '📦 Basic', desc: 'SLA · low-traffic production' },
-                      { value: 'Standard', label: '⭐ Standard', desc: 'SLA · higher throughput' },
-                      { value: 'Premium', label: '💎 Premium', desc: 'Multi-region · VNET · Private AKS' },
+                      { value: 'BasicV2', label: '📦 Basic v2', desc: 'SLA · fast provisioning · low-traffic' },
+                      { value: 'StandardV2', label: '⭐ Standard v2', desc: 'SLA · zone redundancy · higher throughput' },
+                      { value: 'PremiumV2', label: '💎 Premium v2', desc: 'Multi-region · VNET inject · Private AKS' },
                     ] as const
                   ).map((sku) => (
                     <button
@@ -379,8 +379,8 @@ export function MultiRegion() {
                 {multiRegion.apimSkuName === 'Developer' && (
                   <InfoBox variant="warning" title="Developer SKU has no SLA">
                     The Developer SKU is not suitable for production workloads. Upgrade to{' '}
-                    <strong>Basic</strong>, <strong>Standard</strong>, or <strong>Premium</strong>{' '}
-                    for an SLA-backed gateway.
+                    <strong>Basic v2</strong>, <strong>Standard v2</strong>, or{' '}
+                    <strong>Premium v2</strong> for an SLA-backed gateway.
                   </InfoBox>
                 )}
                 <div className="mt-3">
