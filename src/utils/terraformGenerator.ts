@@ -148,7 +148,7 @@ resource "azurerm_role_assignment" "acr_pull" {
   scope                            = "/subscriptions/${cfg.subscriptionId}/resourceGroups/${cfg.resourceGroupName}/providers/Microsoft.ContainerRegistry/registries/${cfg.containerRegistryName}"
   skip_service_principal_aad_check = true
 }
-` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorTerraform(cfg) : ''}output "kube_config" {
+` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorTerraform(cfg) : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableApim ? generateApimTerraform(cfg) : ''}output "kube_config" {
   value     = azurerm_kubernetes_cluster.aks.kube_config_raw
   sensitive = true
 }
@@ -340,5 +340,37 @@ output "frontdoor_endpoint" {
   value = azurerm_cdn_frontdoor_endpoint.afd_endpoint.host_name
 }
 ${secondaryClusterResources}
+`;
+}
+
+function generateApimTerraform(cfg: WizardConfig): string {
+  const mr = cfg.multiRegion;
+  const apimName = `${cfg.clusterName || 'aks'}-apim`;
+  const skuName = `${mr.apimSkuName}_1`;
+  const publisherEmail = mr.apimPublisherEmail || 'admin@contoso.com';
+
+  return `
+# ─── Azure API Management ──────────────────────────────────────────────────────
+resource "azurerm_api_management" "apim" {
+  name                = "${apimName}"
+  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  publisher_name      = "${cfg.clusterName || 'AKS-Wizard'}"
+  publisher_email     = "${publisherEmail}"
+  sku_name            = "${skuName}"
+
+  tags = {
+    Environment = "Production"
+    ManagedBy   = "AKS-Wizard"
+  }
+}
+
+output "apim_gateway_url" {
+  value = azurerm_api_management.apim.gateway_url
+}
+
+output "apim_portal_url" {
+  value = azurerm_api_management.apim.developer_portal_url
+}
 `;
 }

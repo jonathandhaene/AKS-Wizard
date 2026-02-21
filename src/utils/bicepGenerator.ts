@@ -162,7 +162,7 @@ resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     principalType: 'ServicePrincipal'
   }
 }
-` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorBicep(cfg) : ''}`;
+` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorBicep(cfg) : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableApim ? generateApimBicep(cfg) : ''}`;
 
 }
 
@@ -356,5 +356,36 @@ ${mr.secondaryRegions
   .join('')}
 output frontDoorEndpointHostname string = frontDoorProfile::defaultEndpoint.properties.hostName
 ${mr.secondaryRegions.map((region) => `output clusterName_${region.replace(/-/g, '_')} string = aksCluster_${region.replace(/-/g, '_')}.name`).join('\n')}
+`;
+}
+
+function generateApimBicep(cfg: import('../types/wizard').WizardConfig): string {
+  const mr = cfg.multiRegion;
+  const apimName = `${cfg.clusterName || 'aks'}-apim`;
+  const capacityMap: Record<string, number> = { Developer: 1, Basic: 1, Standard: 1, Premium: 1 };
+  const capacity = capacityMap[mr.apimSkuName] ?? 1;
+  const publisherEmail = mr.apimPublisherEmail || 'admin@contoso.com';
+
+  return `
+// ─── Azure API Management ─────────────────────────────────────────────────────
+resource apimService 'Microsoft.ApiManagement/service@2023-03-01-preview' = {
+  name: '${apimName}'
+  location: location
+  sku: {
+    name: '${mr.apimSkuName}'
+    capacity: ${capacity}
+  }
+  properties: {
+    publisherEmail: '${publisherEmail}'
+    publisherName: '${cfg.clusterName || 'AKS-Wizard'}'
+  }
+  tags: {
+    Environment: 'Production'
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+
+output apimGatewayUrl string = apimService.properties.gatewayUrl
+output apimPortalUrl string = apimService.properties.developerPortalUrl
 `;
 }

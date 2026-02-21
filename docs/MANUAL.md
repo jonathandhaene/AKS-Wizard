@@ -23,6 +23,7 @@ This manual provides a step-by-step walkthrough of every screen in the AKS-Wizar
 9. [Monitoring & Observability](#step-9-monitoring--observability)
 10. [Add-ons](#step-10-add-ons)
 11. [Multi-Region & High Availability](#step-11-multi-region--high-availability)
+    - [Azure API Management (APIM)](#azure-api-management-apim)
 12. [Persistent Storage](#step-12-persistent-storage)
 13. [Review & Validate](#step-13-review--validate)
 14. [Generated Templates](#step-14-generated-templates)
@@ -1097,6 +1098,164 @@ resource "azurerm_cdn_frontdoor_origin_group" "aks" {
 }
 ```
 
+### Azure API Management (APIM)
+
+#### Purpose
+
+Azure API Management (APIM) is a fully managed API gateway service that sits in front of your AKS-hosted APIs. In a multi-region, always-on architecture, APIM acts as the centralised plane for API security, rate limiting, policy enforcement, versioning, and developer onboarding — while Azure Front Door handles global traffic routing to the nearest healthy APIM or AKS endpoint.
+
+#### What you see
+
+```
+Azure API Management (APIM)
+┌─────────────────────────────────────────────────────────────────────┐
+│ 🔀 Enable Azure API Management              ⓘ  [ OFF ]             │
+│ Provision an APIM gateway to manage, secure, and observe APIs       │
+│ exposed by AKS                                                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+(When enabled, the APIM SKU selector appears:)
+
+APIM SKU  ⓘ
+[ 🧪 Developer   No SLA · dev/test only             ]
+[ 📦 Basic        SLA · low-traffic production       ]
+[ ⭐ Standard     SLA · higher throughput             ]
+[ 💎 Premium      Multi-region · VNET · Private AKS  ]
+
+⚠️ Developer SKU has no SLA
+   The Developer SKU is not suitable for production workloads.
+   Upgrade to Basic, Standard, or Premium for an SLA-backed gateway.
+
+Publisher Email  ⓘ  [ admin@contoso.com ]
+```
+
+#### Fields & Impact
+
+| Field | Default | Description | Impact |
+|-------|---------|-------------|--------|
+| **Enable Azure API Management** | ❌ OFF | Provisions an Azure API Management service instance in the primary region. | When enabled, generates a `Microsoft.ApiManagement/service` (Bicep) or `azurerm_api_management` (Terraform) resource pointing to the cluster's services. |
+| **APIM SKU** | `Developer` | The pricing and capability tier for the APIM instance. | See the SKU comparison table below. |
+| **Publisher Email** | *(empty)* | The contact email address for the APIM instance. Used for administrative notifications and shown in the developer portal. | Falls back to `admin@contoso.com` in generated templates if left empty. Set this to a real address before deploying. |
+
+#### SKU Comparison
+
+| SKU | SLA | Multi-region | VNET Integration | Recommended for |
+|-----|-----|--------------|-----------------|-----------------|
+| **Developer** | ❌ None | ❌ | Internal only | Dev/test environments |
+| **Basic** | ✅ 99.95% | ❌ | Internal only | Low-traffic production APIs |
+| **Standard** | ✅ 99.95% | ❌ | Internal only | Mid-traffic production APIs |
+| **Premium** | ✅ 99.99% | ✅ | Internal + External | High-traffic, multi-region, private AKS |
+
+> **Production recommendation:** Use **Premium** SKU when APIM is combined with a multi-region AKS deployment, as it supports multi-region gateway deployments and Virtual Network integration for private AKS clusters.
+
+#### Architecture with APIM
+
+When APIM is enabled alongside Azure Front Door, the traffic path becomes:
+
+```
+                         ┌──────────────────────────────────┐
+        Global Users ───▶│       Azure Front Door            │
+                         │  (Global CDN + WAF + Health Probe)│
+                         └───────────┬──────────┬────────────┘
+                                     │          │
+                    ┌────────────────▼──┐    ┌──▼────────────────┐
+                    │    Primary Region  │    │  Secondary Region  │
+                    │                   │    │                    │
+                    │  ┌─────────────┐  │    │  ┌─────────────┐  │
+                    │  │    APIM     │  │    │  │    APIM     │  │
+                    │  └──────┬──────┘  │    │  └──────┬──────┘  │
+                    │         │         │    │         │          │
+                    │  ┌──────▼──────┐  │    │  ┌──────▼──────┐  │
+                    │  │ AKS Cluster │  │    │  │ AKS Cluster │  │
+                    │  └─────────────┘  │    │  └─────────────┘  │
+                    └───────────────────┘    └────────────────────┘
+```
+
+APIM provides the following capabilities at the gateway layer:
+
+- **Rate limiting and throttling** — Protect backend AKS services from overload by enforcing per-client or per-subscription request quotas.
+- **Authentication and authorisation** — Validate OAuth 2.0 / JWT tokens, API keys, or mutual TLS certificates before requests reach AKS pods.
+- **API versioning** — Expose multiple API versions simultaneously, route traffic to the correct AKS service version, and deprecate old versions gracefully.
+- **Request/response transformation** — Rewrite headers, strip internal details from responses, and translate protocols (e.g., REST to SOAP).
+- **Developer portal** — Automatically generate interactive API documentation and allow external developers to subscribe and test APIs.
+- **Observability** — Forward telemetry to Azure Monitor / Application Insights for end-to-end request tracing across Front Door → APIM → AKS.
+
+#### Use Cases in Multi-Region Always-On Architectures
+
+| Use case | How APIM helps |
+|----------|---------------|
+| **Centralised API security** | Apply authentication, authorisation, and WAF policies once at the gateway rather than in each microservice. |
+| **Traffic shaping** | Gradually shift traffic between API versions (canary releases) or between regional backends without changing client URLs. |
+| **SLA isolation** | APIM buffers downstream latency spikes from AKS, providing a stable response-time SLA to API consumers. |
+| **Developer onboarding** | The built-in developer portal lets internal or external teams discover, subscribe to, and test APIs without direct cluster access. |
+| **Protocol bridging** | Expose gRPC or WebSocket services from AKS as REST/OpenAPI endpoints for broader client compatibility. |
+
+#### Step-by-Step: Enabling APIM for Multi-Region AKS
+
+1. **Enable Multi-Region Deployment** (this step) and select at least one secondary region.
+2. **Enable Azure API Management** and choose a SKU:
+   - Use **Premium** for production multi-region deployments (supports multi-region gateways and VNET integration).
+   - Use **Developer** for initial development and testing only.
+3. **After generating templates**, complete the following manual steps:
+   a. Set `publisherEmail` and `publisherName` in the generated template to your organisation's values.
+   b. Import your API definitions (OpenAPI / WSDL / GraphQL) into APIM via the Azure portal or the `az apim api import` CLI command.
+   c. Configure **backend** resources in APIM pointing to each AKS ingress controller hostname or internal load balancer IP per region.
+   d. If using **Premium** SKU with multi-region: add APIM gateway units in each secondary region via `az apim update --add additionalLocations`.
+   e. Configure **named values** or **Key Vault references** in APIM for any secrets (e.g., backend API keys, JWT signing keys).
+4. **Point Azure Front Door** origins to the APIM gateway URL(s) instead of directly to AKS ingress IPs to centralise traffic policy enforcement.
+
+#### Generated Templates
+
+When multi-region and APIM are enabled, the wizard appends the following resources to the generated templates:
+
+**Bicep (excerpt)**
+
+```bicep
+resource apimService 'Microsoft.ApiManagement/service@2023-03-01-preview' = {
+  name: '${clusterName}-apim'
+  location: location
+  sku: {
+    name: 'Developer'
+    capacity: 1
+  }
+  properties: {
+    publisherEmail: 'admin@contoso.com'
+    publisherName: '${clusterName}'
+  }
+  tags: {
+    Environment: 'Production'
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+
+output apimGatewayUrl string = apimService.properties.gatewayUrl
+output apimPortalUrl string = apimService.properties.developerPortalUrl
+```
+
+**Terraform (excerpt)**
+
+```hcl
+resource "azurerm_api_management" "apim" {
+  name                = "${var.cluster_name}-apim"
+  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  publisher_name      = "${var.cluster_name}"
+  publisher_email     = "admin@contoso.com"
+  sku_name            = "Developer_1"
+
+  tags = {
+    Environment = "Production"
+    ManagedBy   = "AKS-Wizard"
+  }
+}
+
+output "apim_gateway_url" {
+  value = azurerm_api_management.apim.gateway_url
+}
+```
+
+> **Note:** The `publisherEmail` and `publisherName` fields are placeholder values. Replace them with your organisation's details before deploying. For the Premium SKU, update `sku_name` to `"Premium_1"` (Terraform) or `name: 'Premium'` (Bicep) and increase `capacity` to match your throughput requirements.
+
 ### Official References
 
 - [Azure Front Door overview](https://learn.microsoft.com/azure/frontdoor/front-door-overview)
@@ -1111,6 +1270,10 @@ resource "azurerm_cdn_frontdoor_origin_group" "aks" {
 - [Azure Container Registry geo-replication](https://learn.microsoft.com/azure/container-registry/container-registry-geo-replication)
 - [Azure Traffic Manager overview](https://learn.microsoft.com/azure/traffic-manager/traffic-manager-overview)
 - [Azure Chaos Studio overview](https://learn.microsoft.com/azure/chaos-studio/chaos-studio-overview)
+- [Azure API Management overview](https://learn.microsoft.com/azure/api-management/api-management-key-concepts)
+- [APIM with AKS](https://learn.microsoft.com/azure/api-management/api-management-kubernetes)
+- [APIM SKU comparison](https://learn.microsoft.com/azure/api-management/api-management-features)
+- [APIM multi-region deployment](https://learn.microsoft.com/azure/api-management/api-management-howto-deploy-multi-region)
 
 ---
 
@@ -1722,6 +1885,9 @@ The table below summarises every configurable field in the wizard, its default v
 | `multiRegion.frontDoorSkuName` | `Standard_AzureFrontDoor` | Multi-Region |
 | `multiRegion.enableWaf` | `false` | Multi-Region |
 | `multiRegion.enableHealthProbes` | `true` | Multi-Region |
+| `multiRegion.enableApim` | `false` | Multi-Region |
+| `multiRegion.apimSkuName` | `Developer` | Multi-Region |
+| `multiRegion.apimPublisherEmail` | *(empty)* | Multi-Region |
 
 ---
 
@@ -1751,6 +1917,7 @@ The table below summarises every configurable field in the wizard, its default v
 | Term | Definition |
 |------|-----------|
 | **Always-On Architecture** | A system design where the service remains available across regional failures, typically achieved by running redundant instances in multiple Azure regions behind Azure Front Door. |
+| **APIM** | Azure API Management — a fully managed API gateway that provides rate limiting, authentication, versioning, and a developer portal for APIs exposed by AKS services. |
 | **Azure Chaos Studio** | An Azure service for fault injection and resilience testing, allowing you to simulate regional outages, VM failures, and network disruptions in a controlled way. |
 | **Azure Cosmos DB** | A globally distributed, multi-model database service that supports multi-region writes, five consistency levels, and a 99.999% SLA when multi-region writes are enabled. |
 | **Azure Front Door** | A global CDN and application delivery network (ADN) from Microsoft that provides intelligent traffic routing, SSL termination, WAF, and DDoS protection. |
@@ -1806,6 +1973,10 @@ The table below summarises every configurable field in the wizard, its default v
 - [Azure Front Door WAF](https://learn.microsoft.com/azure/web-application-firewall/afds/afds-overview)
 - [Azure Front Door health probes](https://learn.microsoft.com/azure/frontdoor/health-probes)
 - [Azure Front Door SKU comparison](https://learn.microsoft.com/azure/frontdoor/standard-premium/overview)
+- [Azure API Management overview](https://learn.microsoft.com/azure/api-management/api-management-key-concepts)
+- [APIM with AKS](https://learn.microsoft.com/azure/api-management/api-management-kubernetes)
+- [APIM SKU comparison](https://learn.microsoft.com/azure/api-management/api-management-features)
+- [APIM multi-region deployment](https://learn.microsoft.com/azure/api-management/api-management-howto-deploy-multi-region)
 - [Azure Cosmos DB global distribution](https://learn.microsoft.com/azure/cosmos-db/distribute-data-globally)
 - [Azure Cosmos DB multi-region writes](https://learn.microsoft.com/azure/cosmos-db/multi-region-writes)
 - [Azure Cosmos DB consistency levels](https://learn.microsoft.com/azure/cosmos-db/consistency-levels)

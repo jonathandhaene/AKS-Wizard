@@ -289,6 +289,118 @@ export function MultiRegion() {
             <strong>Azure Database for PostgreSQL Flexible Server</strong> with read replicas for
             a fully resilient multi-region architecture.
           </InfoBox>
+
+          {/* Azure API Management */}
+          <div className="card mb-4">
+            <div className="section-title">Azure API Management (APIM)</div>
+
+            <div
+              className="flex items-center justify-between py-3"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              <div className="flex items-start gap-3">
+                <span className="text-xl">🔀</span>
+                <div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Enable Azure API Management
+                    </span>
+                    <Tooltip content="Azure API Management acts as a managed API gateway in front of your AKS services — providing rate limiting, authentication, API versioning, and a developer portal.">
+                      <span className="text-xs cursor-help" style={{ color: 'var(--info)' }}>ⓘ</span>
+                    </Tooltip>
+                  </div>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    Provision an APIM gateway to manage, secure, and observe APIs exposed by AKS
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => update({ enableApim: !multiRegion.enableApim })}
+                className="relative inline-flex h-6 w-11 rounded-full transition-colors flex-shrink-0"
+                style={{ background: multiRegion.enableApim ? 'var(--success)' : 'var(--border)' }}
+              >
+                <span
+                  className="inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform mt-0.5 ml-0.5"
+                  style={{ transform: multiRegion.enableApim ? 'translateX(20px)' : 'translateX(0)' }}
+                />
+              </button>
+            </div>
+
+            {multiRegion.enableApim && (
+              <div className="pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                <label className="field-label">
+                  APIM SKU{' '}
+                  <Tooltip content="Developer: no SLA, ideal for dev/test. Basic/Standard: SLA-backed, suitable for production APIs. Premium: multi-region VNET integration — required for private AKS backends.">
+                    <span className="ml-1 text-xs cursor-help" style={{ color: 'var(--info)' }}>ⓘ</span>
+                  </Tooltip>
+                </label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  {(
+                    [
+                      { value: 'Developer', label: '🧪 Developer', desc: 'No SLA · dev/test only' },
+                      { value: 'Basic', label: '📦 Basic', desc: 'SLA · low-traffic production' },
+                      { value: 'Standard', label: '⭐ Standard', desc: 'SLA · higher throughput' },
+                      { value: 'Premium', label: '💎 Premium', desc: 'Multi-region · VNET · Private AKS' },
+                    ] as const
+                  ).map((sku) => (
+                    <button
+                      key={sku.value}
+                      onClick={() => update({ apimSkuName: sku.value })}
+                      className="flex flex-col items-start p-3 rounded text-left text-sm transition-all"
+                      style={{
+                        background:
+                          multiRegion.apimSkuName === sku.value
+                            ? 'var(--accent)'
+                            : 'var(--bg-secondary)',
+                        color:
+                          multiRegion.apimSkuName === sku.value
+                            ? 'var(--accent-text)'
+                            : 'var(--text-primary)',
+                        border: `2px solid ${multiRegion.apimSkuName === sku.value ? 'var(--accent)' : 'var(--border)'}`,
+                        borderRadius: 'var(--radius)',
+                      }}
+                    >
+                      <span className="font-semibold">{sku.label}</span>
+                      <span
+                        className="text-xs mt-0.5"
+                        style={{
+                          color:
+                            multiRegion.apimSkuName === sku.value
+                              ? 'var(--accent-text)'
+                              : 'var(--text-secondary)',
+                          opacity: 0.85,
+                        }}
+                      >
+                        {sku.desc}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {multiRegion.apimSkuName === 'Developer' && (
+                  <InfoBox variant="warning" title="Developer SKU has no SLA">
+                    The Developer SKU is not suitable for production workloads. Upgrade to{' '}
+                    <strong>Basic</strong>, <strong>Standard</strong>, or <strong>Premium</strong>{' '}
+                    for an SLA-backed gateway.
+                  </InfoBox>
+                )}
+                <div className="mt-3">
+                  <label className="field-label">
+                    Publisher Email{' '}
+                    <Tooltip content="The contact email address for the APIM publisher. Used for administrative notifications and shown in the developer portal.">
+                      <span className="ml-1 text-xs cursor-help" style={{ color: 'var(--info)' }}>ⓘ</span>
+                    </Tooltip>
+                  </label>
+                  <input
+                    className="field-input"
+                    type="email"
+                    placeholder="admin@contoso.com"
+                    value={multiRegion.apimPublisherEmail}
+                    onChange={(e) => update({ apimPublisherEmail: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </>
       )}
 
