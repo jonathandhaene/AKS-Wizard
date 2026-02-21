@@ -44,6 +44,15 @@ export interface WorkloadConfig {
   enableMonitoringIntegration: boolean;
 }
 
+export interface MultiRegionConfig {
+  enableMultiRegion: boolean;
+  secondaryRegions: string[];
+  enableFrontDoor: boolean;
+  frontDoorSkuName: 'Standard_AzureFrontDoor' | 'Premium_AzureFrontDoor';
+  enableWaf: boolean;
+  enableHealthProbes: boolean;
+}
+
 export type Theme =
   | 'theme-classic'
   | 'theme-win95'
@@ -129,6 +138,9 @@ export interface WizardConfig {
   enableDapr: boolean;
   enableAcrIntegration: boolean;
   containerRegistryName: string;
+
+  // Multi-Region
+  multiRegion: MultiRegionConfig;
 }
 
 export const defaultConfig: WizardConfig = {
@@ -211,6 +223,15 @@ export const defaultConfig: WizardConfig = {
   enableDapr: false,
   enableAcrIntegration: false,
   containerRegistryName: '',
+
+  multiRegion: {
+    enableMultiRegion: false,
+    secondaryRegions: [],
+    enableFrontDoor: true,
+    frontDoorSkuName: 'Standard_AzureFrontDoor',
+    enableWaf: false,
+    enableHealthProbes: true,
+  },
 };
 
 export const STEPS = [
@@ -224,6 +245,7 @@ export const STEPS = [
   { id: 'security', label: 'Security' },
   { id: 'monitoring', label: 'Monitoring' },
   { id: 'addons', label: 'Add-ons' },
+  { id: 'multiregion', label: 'Multi-Region' },
   { id: 'storage', label: 'Storage' },
   { id: 'review', label: 'Review' },
   { id: 'templates', label: 'Templates' },

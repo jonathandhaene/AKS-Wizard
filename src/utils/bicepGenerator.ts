@@ -162,6 +162,199 @@ resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     principalType: 'ServicePrincipal'
   }
 }
-` : ''}`;
+` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorBicep(cfg) : ''}`;
 
+}
+
+function generateFrontDoorBicep(cfg: import('../types/wizard').WizardConfig): string {
+  const mr = cfg.multiRegion;
+  const allRegions = [cfg.region, ...mr.secondaryRegions];
+  const profileName = `${cfg.clusterName || 'aks'}-afd`;
+  const wafPolicyName = `${(cfg.clusterName || 'aks').replace(/-/g, '')}afdwaf`;
+
+  const wafPolicy = mr.enableWaf
+    ? `
+resource wafPolicy 'Microsoft.Network/FrontDoorWebApplicationFirewallPolicies@2022-05-01' = {
+  name: '${wafPolicyName}'
+  location: 'global'
+  sku: {
+    name: '${mr.frontDoorSkuName}'
+  }
+  properties: {
+    policySettings: {
+      enabledState: 'Enabled'
+      mode: 'Prevention'
+    }
+    managedRules: {
+      managedRuleSets: [${mr.frontDoorSkuName === 'Premium_AzureFrontDoor' ? `
+        {
+          ruleSetType: 'Microsoft_DefaultRuleSet'
+          ruleSetVersion: '2.1'
+        }
+        {
+          ruleSetType: 'Microsoft_BotManagerRuleSet'
+          ruleSetVersion: '1.0'
+        }` : ''}
+      ]
+    }
+  }
+}
+`
+    : '';
+
+  const securityPolicy = mr.enableWaf
+    ? `
+  resource securityPolicy 'securityPolicies' = {
+    name: 'security-policy'
+    properties: {
+      parameters: {
+        type: 'WebApplicationFirewall'
+        wafPolicy: {
+          id: wafPolicy.id
+        }
+        associations: [
+          {
+            domains: [
+              {
+                id: frontDoorProfile::defaultEndpoint.id
+              }
+            ]
+            patternsToMatch: [
+              '/*'
+            ]
+          }
+        ]
+      }
+    }
+  }`
+    : '';
+
+  const healthProbeSettings = mr.enableHealthProbes
+    ? `
+        healthProbeSettings: {
+          probePath: '/healthz'
+          probeRequestType: 'HEAD'
+          probeProtocol: 'Https'
+          probeIntervalInSeconds: 30
+        }`
+    : '';
+
+  return `
+// ─── Azure Front Door ─────────────────────────────────────────────────────────
+${wafPolicy}
+resource frontDoorProfile 'Microsoft.Cdn/profiles@2023-05-01' = {
+  name: '${profileName}'
+  location: 'global'
+  sku: {
+    name: '${mr.frontDoorSkuName}'
+  }
+  tags: {
+    Environment: 'Production'
+    ManagedBy: 'AKS-Wizard'
+  }
+
+  resource defaultEndpoint 'afdEndpoints' = {
+    name: '${profileName}-endpoint'
+    location: 'global'
+    properties: {
+      enabledState: 'Enabled'
+    }
+  }
+
+  resource originGroup 'originGroups' = {
+    name: 'aks-origin-group'
+    properties: {
+      loadBalancingSettings: {
+        sampleSize: 4
+        successfulSamplesRequired: 3
+        additionalLatencyInMilliseconds: 50
+      }${healthProbeSettings}
+    }
+
+    resource origins 'origins' = [for origin in [${allRegions
+      .map(
+        (region, idx) => `
+      // TODO: Replace hostName with the actual ingress controller IP/hostname for ${region}
+      {
+        name: 'aks-origin-${region}'
+        hostName: 'replace-with-ingress-ip-${region}.nip.io'
+        priority: ${idx + 1}
+        weight: ${idx === 0 ? 1000 : 500}
+      }`,
+      )
+      .join(',')}
+    ]: {
+      name: origin.name
+      properties: {
+        hostName: origin.hostName
+        httpPort: 80
+        httpsPort: 443
+        originHostHeader: origin.hostName
+        priority: origin.priority
+        weight: origin.weight
+        enabledState: 'Enabled'
+      }
+    }]
+  }
+
+  resource defaultRoute 'routes' = {
+    name: 'default-route'
+    properties: {
+      endpointName: defaultEndpoint.name
+      originGroup: {
+        id: originGroup.id
+      }
+      supportedProtocols: ['Http', 'Https']
+      patternsToMatch: ['/*']
+      forwardingProtocol: 'HttpsOnly'
+      httpsRedirect: 'Enabled'
+      linkToDefaultDomain: 'Enabled'
+    }
+  }
+${securityPolicy}
+}
+
+// Secondary region AKS clusters
+${mr.secondaryRegions
+  .map(
+    (region) => `resource aksCluster_${region.replace(/-/g, '_')} 'Microsoft.ContainerService/managedClusters@2023-01-01' = {
+  name: '${cfg.clusterName || 'aks'}-${region}'
+  location: '${region}'
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    kubernetesVersion: kubernetesVersion
+    dnsPrefix: '${cfg.dnsPrefix || cfg.clusterName || 'my-aks'}-${region}'
+    enableRBAC: ${cfg.enableRbac}
+    agentPoolProfiles: [
+      {
+        name: '${cfg.systemNodePool.name}'
+        mode: 'System'
+        vmSize: systemNodeVmSize
+        enableAutoScaling: ${cfg.systemNodePool.enableAutoScaling}
+        ${cfg.systemNodePool.enableAutoScaling ? `minCount: ${cfg.systemNodePool.minNodes}\n        maxCount: ${cfg.systemNodePool.maxNodes}` : `count: ${cfg.systemNodePool.nodeCount}`}
+        osType: 'Linux'
+        type: 'VirtualMachineScaleSets'
+      }
+    ]
+    networkProfile: {
+      networkPlugin: '${cfg.networkPlugin}'
+      loadBalancerSku: '${cfg.loadBalancerSku.toLowerCase()}'
+      serviceCidr: '${cfg.serviceCidr}'
+      dockerBridgeCidr: '${cfg.dockerBridgeCidr}'
+    }
+  }
+  tags: {
+    Environment: 'Production'
+    ManagedBy: 'AKS-Wizard'
+    Region: '${region}'
+  }
+}
+`,
+  )
+  .join('')}
+output frontDoorEndpointHostname string = frontDoorProfile::defaultEndpoint.properties.hostName
+${mr.secondaryRegions.map((region) => `output clusterName_${region.replace(/-/g, '_')} string = aksCluster_${region.replace(/-/g, '_')}.name`).join('\n')}
+`;
 }
