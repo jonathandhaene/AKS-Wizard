@@ -47,14 +47,15 @@ export function Monitoring() {
 
   return (
     <WizardLayout>
-      <h2 className="text-2xl font-bold mb-2">Monitoring</h2>
+      <h2 className="text-2xl font-bold mb-2">Monitoring &amp; Observability</h2>
       <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-        Set up observability for your cluster — logs, metrics, and alerts.
+        Set up observability for your cluster — logs, metrics, alerts, and diagnostics.
       </p>
 
       <InfoBox variant="tip" title="Why Monitor?">
         Without monitoring you're flying blind. Container Insights provides CPU, memory, and log
-        visibility. Prometheus enables custom metric scraping.
+        visibility. Prometheus enables custom metric scraping. Alerts let you react proactively
+        before issues escalate.
       </InfoBox>
 
       <div className="card">
@@ -99,7 +100,49 @@ export function Monitoring() {
           label="Enable Azure Monitor Metrics"
           tooltip="Sends cluster and node metrics to Azure Monitor for dashboards and alerts."
         />
+
+        <Toggle
+          enabled={config.enableAlerts}
+          onToggle={() => updateConfig({ enableAlerts: !config.enableAlerts })}
+          label="Enable Proactive Alerts"
+          tooltip="Configure Azure Monitor alert rules for CPU, memory, pod failures, and node conditions. Receive notifications via email, SMS, or webhook."
+        />
+
+        <Toggle
+          enabled={config.enableDiagnosticSettings}
+          onToggle={() => updateConfig({ enableDiagnosticSettings: !config.enableDiagnosticSettings })}
+          label="Enable Diagnostic Settings"
+          tooltip="Stream AKS control-plane logs (kube-apiserver, kube-controller-manager, kube-scheduler, cluster-autoscaler) to Log Analytics for deep troubleshooting."
+        />
       </div>
+
+      {config.enableAlerts && (
+        <InfoBox variant="info" title="Recommended Alert Rules">
+          <ul className="list-disc list-inside space-y-1">
+            <li>
+              <strong>Node CPU &gt; 85%</strong> for 5 minutes — potential resource exhaustion.
+            </li>
+            <li>
+              <strong>Pod restart count &gt; 5</strong> in 10 minutes — possible crash loops.
+            </li>
+            <li>
+              <strong>Pending pods &gt; 0</strong> for 10 minutes — scheduling issues or resource
+              quota exhaustion.
+            </li>
+            <li>
+              <strong>Node not ready</strong> for 2 minutes — node health degradation.
+            </li>
+          </ul>
+        </InfoBox>
+      )}
+
+      {config.enableDiagnosticSettings && (
+        <InfoBox variant="tip" title="Control-Plane Diagnostic Logs">
+          Enabling diagnostic settings for the AKS control plane helps debug issues with API server
+          authentication, admission controllers, and scheduler decisions. Recommended retention:
+          30–90 days in Log Analytics.
+        </InfoBox>
+      )}
     </WizardLayout>
   );
 }

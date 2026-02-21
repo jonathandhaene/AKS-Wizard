@@ -2,6 +2,26 @@ import { WizardLayout } from '../components/WizardLayout';
 import { InfoBox } from '../components/InfoBox';
 import { Tooltip } from '../components/Tooltip';
 import { useWizard } from '../contexts/WizardContext';
+import type { IngressController } from '../types/wizard';
+
+const INGRESS_OPTIONS: { value: IngressController; label: string; desc: string }[] = [
+  { value: 'none', label: '🚫 None', desc: 'No managed ingress. Configure manually.' },
+  {
+    value: 'nginx',
+    label: '🔷 NGINX',
+    desc: 'Community-standard ingress controller. Flexible and widely supported.',
+  },
+  {
+    value: 'appgw',
+    label: '🌐 Application Gateway',
+    desc: 'Azure-native Layer 7 load balancer with WAF support (AGIC).',
+  },
+  {
+    value: 'traefik',
+    label: '🔶 Traefik',
+    desc: "Cloud-native ingress with automatic service discovery and Let's Encrypt support.",
+  },
+];
 
 export function Networking() {
   const { config, updateConfig } = useWizard();
@@ -10,7 +30,7 @@ export function Networking() {
     <WizardLayout>
       <h2 className="text-2xl font-bold mb-2">Networking</h2>
       <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-        Configure how pods and services communicate within your cluster.
+        Configure how pods and services communicate within and outside your cluster.
       </p>
 
       <InfoBox variant="info" title="Network Plugin">
@@ -125,6 +145,82 @@ export function Networking() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Ingress Controller */}
+        <div>
+          <label className="field-label">
+            Ingress Controller{' '}
+            <Tooltip content="An ingress controller manages external HTTP/HTTPS access to services. Choose a controller that fits your routing, TLS, and WAF requirements.">
+              <span className="ml-1 text-xs cursor-help" style={{ color: 'var(--info)' }}>
+                ⓘ
+              </span>
+            </Tooltip>
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {INGRESS_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => updateConfig({ ingressController: opt.value })}
+                className="flex flex-col items-start p-3 rounded text-left transition-all"
+                style={{
+                  background:
+                    config.ingressController === opt.value
+                      ? 'var(--accent)'
+                      : 'var(--bg-secondary)',
+                  color:
+                    config.ingressController === opt.value
+                      ? 'var(--accent-text)'
+                      : 'var(--text-primary)',
+                  border: `2px solid ${config.ingressController === opt.value ? 'var(--accent)' : 'var(--border)'}`,
+                  borderRadius: 'var(--radius)',
+                }}
+              >
+                <span className="font-semibold text-sm">{opt.label}</span>
+                <span
+                  className="text-xs mt-0.5"
+                  style={{
+                    color:
+                      config.ingressController === opt.value
+                        ? 'var(--accent-text)'
+                        : 'var(--text-secondary)',
+                    opacity: 0.85,
+                  }}
+                >
+                  {opt.desc}
+                </span>
+              </button>
+            ))}
+          </div>
+          {config.ingressController === 'appgw' && config.networkPlugin !== 'azure' && (
+            <p className="mt-2 text-xs" style={{ color: 'var(--warning)' }}>
+              ⚠️ Application Gateway Ingress Controller (AGIC) works best with Azure CNI.
+            </p>
+          )}
+        </div>
+
+        {/* Service Mesh */}
+        <div className="flex items-center justify-between py-3 border-t" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              Enable Service Mesh (Open Service Mesh / Istio)
+            </span>
+            <Tooltip content="A service mesh provides mTLS, observability, and fine-grained traffic management between services. AKS supports Open Service Mesh (OSM) and Istio as managed add-ons.">
+              <span className="text-xs cursor-help" style={{ color: 'var(--info)' }}>
+                ⓘ
+              </span>
+            </Tooltip>
+          </div>
+          <button
+            onClick={() => updateConfig({ enableServiceMesh: !config.enableServiceMesh })}
+            className="relative inline-flex h-6 w-11 rounded-full transition-colors"
+            style={{ background: config.enableServiceMesh ? 'var(--success)' : 'var(--border)' }}
+          >
+            <span
+              className="inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform mt-0.5 ml-0.5"
+              style={{ transform: config.enableServiceMesh ? 'translateX(20px)' : 'translateX(0)' }}
+            />
+          </button>
         </div>
       </div>
     </WizardLayout>

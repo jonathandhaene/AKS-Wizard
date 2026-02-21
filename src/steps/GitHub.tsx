@@ -4,9 +4,28 @@ import { useWizard } from '../contexts/WizardContext';
 import { generateTerraform } from '../utils/terraformGenerator';
 import { generateBicep } from '../utils/bicepGenerator';
 import { saveFilesToGitHub } from '../utils/githubApi';
+import type { DeploymentStrategy } from '../types/wizard';
+
+const STRATEGY_OPTIONS: { value: DeploymentStrategy; label: string; desc: string }[] = [
+  {
+    value: 'rolling',
+    label: '🔄 Rolling Update',
+    desc: 'Gradually replaces old pods with new ones. Zero-downtime with minimal complexity.',
+  },
+  {
+    value: 'blue-green',
+    label: '🔵🟢 Blue/Green',
+    desc: 'Run two identical environments. Instantly switch traffic to the new version with instant rollback.',
+  },
+  {
+    value: 'canary',
+    label: '🐦 Canary',
+    desc: 'Route a small percentage of traffic to the new version first, then promote gradually.',
+  },
+];
 
 export function GitHub() {
-  const { config } = useWizard();
+  const { config, updateConfig } = useWizard();
   const [token, setToken] = useState('');
   const [owner, setOwner] = useState('');
   const [repo, setRepo] = useState('');
@@ -41,6 +60,50 @@ export function GitHub() {
       <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
         Save your generated templates directly to a GitHub repository using the GitHub REST API.
       </p>
+
+      {/* Deployment Strategy */}
+      <div className="card mb-5">
+        <div className="section-title">Deployment Strategy</div>
+        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+          Choose how new application versions are rolled out to your AKS cluster. This setting
+          affects the generated GitHub Actions workflow.
+        </p>
+        <div className="grid grid-cols-1 gap-2">
+          {STRATEGY_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => updateConfig({ deploymentStrategy: opt.value })}
+              className="flex items-start gap-3 p-3 rounded text-left transition-all"
+              style={{
+                background:
+                  config.deploymentStrategy === opt.value ? 'var(--accent)' : 'var(--bg-secondary)',
+                color:
+                  config.deploymentStrategy === opt.value
+                    ? 'var(--accent-text)'
+                    : 'var(--text-primary)',
+                border: `2px solid ${config.deploymentStrategy === opt.value ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: 'var(--radius)',
+              }}
+            >
+              <div>
+                <div className="font-semibold text-sm">{opt.label}</div>
+                <div
+                  className="text-xs mt-0.5"
+                  style={{
+                    color:
+                      config.deploymentStrategy === opt.value
+                        ? 'var(--accent-text)'
+                        : 'var(--text-secondary)',
+                    opacity: 0.85,
+                  }}
+                >
+                  {opt.desc}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Files to save */}
       <div className="card mb-5">
