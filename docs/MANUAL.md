@@ -28,6 +28,14 @@ This manual provides a step-by-step walkthrough of every screen in the AKS-Wizar
 14. [Deploy to Azure](#step-14-deploy-to-azure)
 15. [Save to GitHub](#step-15-save-to-github)
 
+### Appendices
+
+- [Appendix A: Complete Configuration Reference](#appendix-a-complete-configuration-reference)
+- [Appendix B: Supported Azure Regions](#appendix-b-supported-azure-regions)
+- [Appendix C: Glossary](#appendix-c-glossary)
+- [Appendix D: Further Learning Resources](#appendix-d-further-learning-resources)
+- [Appendix E: Multi-Region Always-On Architecture](#appendix-e-multi-region-always-on-architecture)
+
 ---
 
 ## Step 1: Welcome
@@ -1383,6 +1391,7 @@ The table below summarises every configurable field in the wizard, its default v
 
 | Term | Definition |
 |------|-----------|
+| **AFD** | Azure Front Door — Microsoft's global, scalable entry-point service providing load balancing, SSL offload, and WAF across multiple regions. |
 | **AKS** | Azure Kubernetes Service — Microsoft's managed Kubernetes offering. |
 | **AKS Automatic** | A fully managed AKS mode where Azure handles node provisioning, upgrades, and security. |
 | **AKS Standard** | The standard AKS mode giving platform teams full control over cluster configuration. |
@@ -1409,8 +1418,10 @@ The table below summarises every configurable field in the wizard, its default v
 | **RBAC** | Role-Based Access Control — a security model that assigns permissions to roles. |
 | **SKU** | Stock Keeping Unit — Azure's term for a pricing/capability tier. |
 | **Terraform** | An open-source IaC tool by HashiCorp that supports multiple cloud providers. |
+| **Traffic Manager** | An Azure DNS-based global load balancer that routes client requests to the most appropriate endpoint across regions. |
 | **VPA** | Vertical Pod Autoscaler — automatically adjusts CPU/memory requests for pods. |
 | **VNet** | Azure Virtual Network — the fundamental building block for Azure networking. |
+| **WAF** | Web Application Firewall — a security layer that filters and monitors HTTP traffic; integrated into Azure Front Door and Application Gateway. |
 
 ---
 
@@ -1438,3 +1449,475 @@ The table below summarises every configurable field in the wizard, its default v
 - [Calico](https://docs.tigera.io/calico/latest/about/)
 - [KEDA scalers](https://keda.sh/docs/latest/scalers/)
 - [Dapr documentation](https://docs.dapr.io/)
+
+---
+
+## Appendix E: Multi-Region Always-On Architecture
+
+> **⚠️ Educational Disclaimer**: The patterns below are provided for educational and learning purposes. Validate all design decisions, IP ranges, failover policies, and cost implications against your own requirements before applying them to production.
+
+### Overview
+
+A **multi-region always-on** architecture ensures your applications remain available even if an entire Azure region becomes unreachable. Instead of relying on a single AKS cluster in one region, you deploy independent AKS clusters in two or more Azure regions and use a global traffic layer — primarily **Azure Front Door** — to route users to the nearest healthy cluster and automatically failover when a region is degraded.
+
+Key characteristics of this architecture:
+
+- **Active–active**: All regional clusters serve live traffic simultaneously; no region is idle.
+- **Low-latency routing**: Users are directed to the geographically closest healthy cluster.
+- **Automatic failover**: If a region fails health checks, traffic is drained and rerouted within seconds.
+- **Independent blast radius**: A misconfiguration or outage in one region does not affect other regions.
+
+```
+                         ┌──────────────────────────────┐
+                         │        Azure Front Door        │
+                         │  (global entry-point + WAF)    │
+                         └───────────┬──────────────┬─────┘
+                                     │              │
+                   latency routing   │              │   latency routing
+                                     │              │
+                     ┌───────────────▼──┐      ┌───▼──────────────────┐
+                     │  Region A         │      │  Region B             │
+                     │  (e.g. East US)   │      │  (e.g. West Europe)   │
+                     │                   │      │                       │
+                     │  ┌─────────────┐  │      │  ┌─────────────┐     │
+                     │  │  AKS Cluster│  │      │  │  AKS Cluster│     │
+                     │  │  + Ingress  │  │      │  │  + Ingress  │     │
+                     │  └──────┬──────┘  │      │  └──────┬──────┘     │
+                     │         │         │      │         │             │
+                     │  ┌──────▼──────┐  │      │  ┌──────▼──────┐    │
+                     │  │  Azure DB   │  │◄────►│  │  Azure DB   │    │
+                     │  │  (primary)  │  │ geo- │  │  (replica)  │    │
+                     │  └─────────────┘  │ rep. │  └─────────────┘    │
+                     └───────────────────┘      └─────────────────────┘
+```
+
+---
+
+### Azure Front Door
+
+Azure Front Door (AFD) is Microsoft's globally distributed, scalable entry-point service. It operates at the network edge in over 100 Points of Presence (PoPs) worldwide and provides:
+
+| Capability | Description |
+|-----------|-------------|
+| **Global load balancing** | Routes requests to the lowest-latency origin that passes health checks. |
+| **SSL/TLS offload** | Terminates HTTPS at the PoP, reducing TLS overhead on your clusters. |
+| **Web Application Firewall (WAF)** | Applies OWASP rulesets and custom rules at the edge before traffic reaches AKS. |
+| **Health probes** | Periodically polls configured origins; marks unhealthy origins as down and routes around them. |
+| **Caching** | Caches static content at PoPs to reduce origin load and improve latency. |
+| **URL rewrite & redirect** | Path-based routing, host rewrites, and HTTPS redirects without cluster-side config. |
+| **Private Link origins** | Send traffic to internal load balancers in your VNet without exposing them publicly. |
+
+#### Front Door tiers
+
+| Tier | Use Case |
+|------|----------|
+| **Standard** | Static sites, simple CDN, basic WAF |
+| **Premium** | Advanced WAF, Private Link origins, security reports — recommended for AKS workloads |
+
+---
+
+### Multi-Region AKS Deployment Pattern
+
+#### 1. Deploy independent AKS clusters per region
+
+Each regional cluster is a self-contained deployment generated by the AKS Wizard. Run the wizard once per region, changing only:
+
+- **Azure Region** (Step 3: Cluster Basics)
+- **Resource Group Name** — use a region-specific name (e.g., `my-app-rg-eastus`, `my-app-rg-westeurope`)
+- **Cluster Name** — include the region suffix (e.g., `my-app-aks-eastus`)
+- **DNS Prefix** — must be unique per cluster
+
+All other settings (VM sizes, node counts, networking, security, monitoring) should be **identical** across regions to ensure consistent behaviour.
+
+> **Tip**: Store each region's wizard-generated IaC in a separate folder, e.g., `infra/eastus/` and `infra/westeurope/`, and deploy them from the same GitHub Actions workflow using a matrix strategy.
+
+#### 2. Use Availability Zones within each region
+
+Enable **Availability Zone** spreading on node pools to protect against datacenter-level failures within a region before also protecting against region-level failures:
+
+```powershell
+az aks nodepool add \
+  --resource-group my-app-rg-eastus \
+  --cluster-name my-app-aks-eastus \
+  --name userpool \
+  --node-count 3 \
+  --zones 1 2 3
+```
+
+The AKS Wizard-generated PowerShell script can be extended with `--zones 1 2 3` on the `az aks create` command.
+
+#### 3. Place an internal load balancer in front of each cluster
+
+Create a Kubernetes `Service` of type `LoadBalancer` with the `azure-load-balancer-internal` annotation so that Azure Front Door can reach the cluster via Private Link, avoiding public internet exposure:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-svc
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: my-app
+  ports:
+    - port: 80
+      targetPort: 8080
+```
+
+#### 4. Configure Azure Front Door Premium with Private Link origins
+
+Create an AFD profile with one **origin group** containing one origin per AKS cluster:
+
+```bicep
+resource frontDoorProfile 'Microsoft.Cdn/profiles@2023-05-01' = {
+  name: 'my-app-afd'
+  location: 'global'
+  sku: { name: 'Premium_AzureFrontDoor' }
+}
+
+resource originGroup 'Microsoft.Cdn/profiles/originGroups@2023-05-01' = {
+  parent: frontDoorProfile
+  name: 'aks-origins'
+  properties: {
+    loadBalancingSettings: {
+      sampleSize: 4
+      successfulSamplesRequired: 3
+      additionalLatencyInMilliseconds: 50
+    }
+    healthProbeSettings: {
+      probePath: '/healthz'
+      probeRequestType: 'GET'
+      probeProtocol: 'Https'
+      probeIntervalInSeconds: 30
+    }
+    sessionAffinityState: 'Disabled'
+  }
+}
+```
+
+> **Note**: The `additionalLatencyInMilliseconds` setting allows AFD to include origins within 50 ms of the fastest origin in the routing pool, enabling true active–active load distribution rather than always routing to the single closest origin.
+
+#### 5. Configure health probes
+
+Expose a dedicated health endpoint (e.g., `/healthz`) from your application that returns HTTP 200 only when the cluster is fully ready to serve traffic. This endpoint should verify:
+
+- Application pods are running and passing readiness probes
+- Database connectivity is healthy
+- Any critical downstream dependencies are reachable
+
+Configure the AFD health probe path to match this endpoint. AFD marks an origin as degraded if the probe fails, and automatically routes traffic to other healthy origins.
+
+---
+
+### Traffic Routing Strategies
+
+Azure Front Door supports three routing methods for multi-region setups:
+
+| Strategy | Description | Best For |
+|----------|-------------|----------|
+| **Latency-based** (default) | Routes to the origin with the lowest measured latency from the client's PoP. | Active–active deployments with uniform data access. |
+| **Weighted** | Distributes traffic by percentage across origins (e.g., 80% Region A, 20% Region B). | Canary rollouts across regions, gradual traffic shifting. |
+| **Priority-based** | Designates primary and fallback origins; traffic goes to fallback only when primary is unhealthy. | Active–passive (warm standby) setups. |
+
+For a **true always-on** architecture, use **latency-based** routing. This serves all regions simultaneously and provides the fastest possible failover because AFD is already actively routing to all origins.
+
+---
+
+### Failover Behaviour
+
+When a regional AKS cluster becomes unhealthy:
+
+1. AFD health probes detect the failure within one probe interval (default: 30 seconds).
+2. AFD stops sending new requests to the unhealthy origin.
+3. In-flight requests are allowed to complete (connection draining).
+4. All new traffic is routed to the remaining healthy origins.
+5. AFD continues probing the failed origin; once it recovers, traffic resumes automatically.
+
+**RTO (Recovery Time Objective)**: typically under 60 seconds for traffic failover.
+**RPO (Recovery Point Objective)**: depends entirely on your data replication strategy (see below).
+
+---
+
+### Data Replication and State Management
+
+Multi-region always-on architectures require that your data layer is also replicated across regions. Stateless applications are straightforward; stateful applications require deliberate design:
+
+#### Recommended Azure data services with built-in geo-replication
+
+| Service | Replication Option | Notes |
+|---------|--------------------|-------|
+| **Azure Cosmos DB** | Multi-region writes (active–active) | Zero-RPO with multi-master. Best choice for globally distributed apps. |
+| **Azure SQL Database** | Active Geo-Replication or Auto-Failover Groups | Readable secondaries; Auto-Failover Groups automate DNS cutover. |
+| **Azure Database for PostgreSQL Flexible Server** | Read replicas + Geo-redundant backup | Replication is asynchronous; some data loss is possible on failover. |
+| **Azure Cache for Redis Enterprise** | Active geo-replication (Enterprise tier) | Active–active; each region reads/writes its local replica. |
+| **Azure Storage** | GRS / GZRS | Object storage with asynchronous replication; RA-GRS allows reads from secondary. |
+
+#### Avoiding the split-brain problem
+
+Multi-region writes introduce the risk of conflicting updates. Mitigation strategies:
+
+- **Use conflict resolution** in Cosmos DB (last-write-wins or custom merge procedures).
+- **Route write traffic to a designated primary region** and route read traffic globally via AFD — simplest approach for SQL-based databases.
+- **Use idempotent operations** (PUT over POST, event sourcing) to make replaying operations safe.
+
+---
+
+### Step-by-Step Implementation Guide
+
+Follow these steps to implement a multi-region always-on architecture using AKS Wizard-generated templates:
+
+#### Step 1: Generate regional IaC templates
+
+1. Open the AKS Wizard and complete all steps for **Region A** (e.g., East US).
+2. On the **Save to GitHub** step, set the folder path to `infra/eastus/` and save.
+3. Go back to **Step 3: Cluster Basics**, change the region to **Region B** (e.g., West Europe), update the resource group name and cluster name.
+4. Save the Region B templates to `infra/westeurope/`.
+
+#### Step 2: Update the GitHub Actions workflow for multi-region deployment
+
+Extend the generated `deploy-aks.yml` to deploy both regions using a matrix:
+
+```yaml
+jobs:
+  deploy-aks:
+    strategy:
+      matrix:
+        region: [eastus, westeurope]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy AKS in ${{ matrix.region }}
+        run: |
+          terraform init
+          terraform apply -auto-approve
+        working-directory: infra/${{ matrix.region }}/
+```
+
+#### Step 3: Deploy the databases with geo-replication
+
+```powershell
+# Example: Azure SQL with Auto-Failover Group
+$primaryServer = "my-sql-eastus"
+$secondaryServer = "my-sql-westeurope"
+$failoverGroup = "my-app-fog"
+
+az sql server create --name $primaryServer --resource-group my-app-rg-eastus --location eastus --admin-user sqladmin --admin-password $env:SQL_PASSWORD
+az sql server create --name $secondaryServer --resource-group my-app-rg-westeurope --location westeurope --admin-user sqladmin --admin-password $env:SQL_PASSWORD
+az sql db create --resource-group my-app-rg-eastus --server $primaryServer --name my-app-db
+
+az sql failover-group create `
+  --name $failoverGroup `
+  --partner-server $secondaryServer `
+  --resource-group my-app-rg-eastus `
+  --server $primaryServer `
+  --add-db my-app-db `
+  --failover-policy Automatic
+```
+
+#### Step 4: Create the Azure Front Door profile
+
+```bicep
+// infra/shared/frontdoor.bicep
+param aksIngressIpEastUs string
+param aksIngressIpWestEurope string
+
+resource afdProfile 'Microsoft.Cdn/profiles@2023-05-01' = {
+  name: 'my-app-afd'
+  location: 'global'
+  sku: { name: 'Premium_AzureFrontDoor' }
+}
+
+resource originGroup 'Microsoft.Cdn/profiles/originGroups@2023-05-01' = {
+  parent: afdProfile
+  name: 'aks-clusters'
+  properties: {
+    loadBalancingSettings: {
+      sampleSize: 4
+      successfulSamplesRequired: 3
+      additionalLatencyInMilliseconds: 50
+    }
+    healthProbeSettings: {
+      probePath: '/healthz'
+      probeRequestType: 'GET'
+      probeProtocol: 'Https'
+      probeIntervalInSeconds: 30
+    }
+    sessionAffinityState: 'Disabled'
+  }
+}
+
+resource originEastUs 'Microsoft.Cdn/profiles/originGroups/origins@2023-05-01' = {
+  parent: originGroup
+  name: 'aks-eastus'
+  properties: {
+    hostName: aksIngressIpEastUs
+    httpPort: 80
+    httpsPort: 443
+    priority: 1
+    weight: 1000
+    enabledState: 'Enabled'
+  }
+}
+
+resource originWestEurope 'Microsoft.Cdn/profiles/originGroups/origins@2023-05-01' = {
+  parent: originGroup
+  name: 'aks-westeurope'
+  properties: {
+    hostName: aksIngressIpWestEurope
+    httpPort: 80
+    httpsPort: 443
+    priority: 1
+    weight: 1000
+    enabledState: 'Enabled'
+  }
+}
+
+resource afdEndpoint 'Microsoft.Cdn/profiles/afdEndpoints@2023-05-01' = {
+  parent: afdProfile
+  name: 'my-app-endpoint'
+  location: 'global'
+  properties: { enabledState: 'Enabled' }
+}
+
+resource afdRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2023-05-01' = {
+  parent: afdEndpoint
+  name: 'default-route'
+  properties: {
+    originGroup: { id: originGroup.id }
+    supportedProtocols: ['Https']
+    patternsToMatch: ['/*']
+    forwardingProtocol: 'HttpsOnly'
+    linkToDefaultDomain: 'Enabled'
+    httpsRedirect: 'Enabled'
+  }
+}
+```
+
+#### Step 5: Configure the WAF policy
+
+Attach an Azure Front Door WAF policy in **Prevention** mode to block common web attacks:
+
+```bicep
+resource wafPolicy 'Microsoft.Network/FrontDoorWebApplicationFirewallPolicies@2022-05-01' = {
+  name: 'myAppWafPolicy'
+  location: 'global'
+  sku: { name: 'Premium_AzureFrontDoor' }
+  properties: {
+    policySettings: {
+      mode: 'Prevention'
+      enabledState: 'Enabled'
+    }
+    managedRules: {
+      managedRuleSets: [
+        { ruleSetType: 'Microsoft_DefaultRuleSet', ruleSetVersion: '2.1' }
+        { ruleSetType: 'Microsoft_BotManagerRuleSet', ruleSetVersion: '1.0' }
+      ]
+    }
+  }
+}
+```
+
+#### Step 6: Enable cross-region monitoring
+
+Configure Azure Monitor alerts that fire when an AFD origin health percentage drops below a threshold:
+
+```bash
+az monitor metrics alert create \
+  --name "AFD-OriginHealthThreshold" \
+  --resource-group my-app-rg-shared \
+  --scopes "/subscriptions/<sub-id>/resourceGroups/my-app-rg-shared/providers/Microsoft.Cdn/profiles/my-app-afd" \
+  --condition "avg OriginHealthPercentage < 50" \
+  --window-size 5m \
+  --evaluation-frequency 1m \
+  --action-group "/subscriptions/<sub-id>/resourceGroups/my-app-rg-shared/providers/microsoft.insights/actionGroups/ops-team"
+```
+
+---
+
+### Best Practices Checklist
+
+Before going to production with a multi-region always-on architecture, confirm:
+
+#### Architecture
+- [ ] At least two AKS clusters deployed in geographically separated Azure regions
+- [ ] Each cluster spans three Availability Zones (`--zones 1 2 3`)
+- [ ] Azure Front Door Premium is used (required for Private Link origins and advanced WAF)
+- [ ] All origins are active and weighted equally for active–active traffic distribution
+- [ ] Health probe endpoint (`/healthz`) is implemented and reflects true application readiness
+
+#### Data & State
+- [ ] Persistent data is stored in a geo-replicated Azure managed service (Cosmos DB, SQL Failover Groups, etc.)
+- [ ] Conflict resolution strategy is defined and tested for multi-region writes
+- [ ] RPO and RTO targets are documented and tested via scheduled failover drills
+
+#### Security
+- [ ] WAF policy is in **Prevention** mode with the Microsoft Default Rule Set enabled
+- [ ] Bot Manager Rule Set is enabled on the WAF policy
+- [ ] Cluster ingress load balancers are **internal** (not publicly accessible)
+- [ ] Azure Front Door uses Private Link to reach internal cluster origins
+- [ ] DDoS protection is enabled on the AFD profile (included in Premium tier)
+
+#### Networking
+- [ ] VNets in each region are peered or connected via VPN/ExpressRoute if needed for cross-region service calls
+- [ ] DNS is served via Azure DNS with CNAME pointing to the AFD endpoint hostname
+- [ ] Custom domain with managed TLS certificate is configured on the AFD endpoint
+
+#### Operations
+- [ ] Azure Monitor alerts are configured for AFD origin health percentage
+- [ ] Container Insights is enabled on all regional clusters and logs are centralised (shared Log Analytics workspace)
+- [ ] Runbook for manual regional failover (e.g., set origin weight to 0) is documented and practiced
+- [ ] Canary or blue/green deployment across regions is automated in the CI/CD pipeline
+
+---
+
+### Cost Considerations
+
+Multi-region deployments multiply infrastructure costs. Key cost drivers:
+
+| Component | Approximate Additional Cost | Notes |
+|-----------|-----------------------------|-------|
+| **Second AKS cluster** | ×2 node pool VM costs | Consider smaller VM sizes in the secondary region for steady-state traffic |
+| **Azure Front Door Premium** | From ~$330/month + data transfer | Includes WAF, Private Link, and security analytics |
+| **Geo-replicated database** | ×1.5–×2 database cost | Depends on service and replication tier |
+| **Cross-region data transfer** | ~$0.02–$0.05/GB | Charged for data leaving a region |
+
+Use the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) with all components to estimate total monthly costs before committing to this architecture.
+
+---
+
+### Architecture Decision: Front Door vs Traffic Manager
+
+Both Azure Front Door and Azure Traffic Manager provide multi-region routing, but they operate at different layers:
+
+| | Azure Front Door | Azure Traffic Manager |
+|---|------------------|-----------------------|
+| **OSI Layer** | Layer 7 (HTTP/HTTPS) | Layer 4 / DNS-based |
+| **SSL offload** | ✅ Yes (at edge PoP) | ❌ No |
+| **WAF** | ✅ Integrated | ❌ No |
+| **Caching** | ✅ Yes | ❌ No |
+| **Failover speed** | Seconds (anycast routing) | Minutes (DNS TTL dependent) |
+| **Private origins** | ✅ Private Link | ❌ No |
+| **Best for** | HTTP/HTTPS applications (AKS) | Non-HTTP protocols, legacy apps |
+
+For AKS-hosted HTTP workloads, **Azure Front Door** is the recommended choice.
+
+---
+
+### Official References
+
+- [Azure Front Door overview](https://learn.microsoft.com/azure/frontdoor/front-door-overview)
+- [Azure Front Door tiers](https://learn.microsoft.com/azure/frontdoor/standard-premium/tier-comparison)
+- [Configure Azure Front Door with AKS](https://learn.microsoft.com/azure/aks/ingress-azure-front-door)
+- [Health probes in Azure Front Door](https://learn.microsoft.com/azure/frontdoor/health-probes)
+- [Azure Front Door WAF](https://learn.microsoft.com/azure/web-application-firewall/afds/afds-overview)
+- [Private Link origin with Azure Front Door Premium](https://learn.microsoft.com/azure/frontdoor/private-link)
+- [Multi-region AKS architecture (Azure Architecture Center)](https://learn.microsoft.com/azure/architecture/reference-architectures/containers/aks-multi-region/aks-multi-cluster)
+- [Azure Cosmos DB multi-region writes](https://learn.microsoft.com/azure/cosmos-db/multi-region-writes)
+- [Azure SQL Auto-Failover Groups](https://learn.microsoft.com/azure/azure-sql/database/auto-failover-group-overview)
+- [Azure Traffic Manager vs Front Door](https://learn.microsoft.com/azure/architecture/guide/technology-choices/load-balancing-overview)
+- [Availability Zones in AKS](https://learn.microsoft.com/azure/aks/availability-zones)
