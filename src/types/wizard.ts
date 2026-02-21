@@ -44,6 +44,8 @@ export interface WorkloadConfig {
   enableMonitoringIntegration: boolean;
 }
 
+export type ApimSkuName = 'Developer' | 'Basic' | 'Standard' | 'Premium';
+
 export interface MultiRegionConfig {
   enableMultiRegion: boolean;
   secondaryRegions: string[];
@@ -51,6 +53,9 @@ export interface MultiRegionConfig {
   frontDoorSkuName: 'Standard_AzureFrontDoor' | 'Premium_AzureFrontDoor';
   enableWaf: boolean;
   enableHealthProbes: boolean;
+  enableApim: boolean;
+  apimSkuName: ApimSkuName;
+  apimPublisherEmail: string;
 }
 
 export type Theme =
@@ -231,6 +236,9 @@ export const defaultConfig: WizardConfig = {
     frontDoorSkuName: 'Standard_AzureFrontDoor',
     enableWaf: false,
     enableHealthProbes: true,
+    enableApim: false,
+    apimSkuName: 'Developer',
+    apimPublisherEmail: '',
   },
 };
 
