@@ -362,13 +362,13 @@ ${mr.secondaryRegions.map((region) => `output clusterName_${region.replace(/-/g,
 function generateApimBicep(cfg: import('../types/wizard').WizardConfig): string {
   const mr = cfg.multiRegion;
   const apimName = `${cfg.clusterName || 'aks'}-apim`;
-  const capacityMap: Record<string, number> = { Developer: 1, Basic: 1, Standard: 1, Premium: 1 };
+  const capacityMap: Record<string, number> = { Developer: 1, BasicV2: 1, StandardV2: 1, PremiumV2: 1 };
   const capacity = capacityMap[mr.apimSkuName] ?? 1;
   const publisherEmail = mr.apimPublisherEmail || 'admin@contoso.com';
 
   return `
 // ─── Azure API Management ─────────────────────────────────────────────────────
-resource apimService 'Microsoft.ApiManagement/service@2023-03-01-preview' = {
+resource apimService 'Microsoft.ApiManagement/service@2024-05-01' = {
   name: '${apimName}'
   location: location
   sku: {
