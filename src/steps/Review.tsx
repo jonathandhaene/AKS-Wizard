@@ -118,6 +118,7 @@ export function Review() {
             ...(cost.monitoring > 0 ? [['Monitoring', `~$${cost.monitoring}/mo`] as [string, string]] : []),
             ...(cost.addons > 0 ? [['Add-ons', `~$${cost.addons}/mo`] as [string, string]] : []),
             ...(cost.storage > 0 ? [['Storage', `~$${cost.storage}/mo`] as [string, string]] : []),
+            ...(cost.multiRegion > 0 ? [['Multi-Region', `~$${cost.multiRegion}/mo`] as [string, string]] : []),
           ].map(([label, value]) => (
             <div key={label} className="flex justify-between py-1.5 text-sm">
               <span style={{ color: 'var(--text-secondary)' }}>{label}</span>

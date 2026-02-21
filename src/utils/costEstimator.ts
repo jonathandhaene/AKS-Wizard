@@ -31,6 +31,7 @@ export interface CostBreakdown {
   monitoring: number;
   addons: number;
   storage: number;
+  multiRegion: number;
   total: number;
 }
 
@@ -60,6 +61,19 @@ export function estimateMonthlyCost(cfg: WizardConfig): CostBreakdown {
           : 10
     : 0;
 
-  const total = systemPool + userPools + monitoring + addons + storage;
-  return { systemPool, userPools, monitoring, addons, storage, total };
+  // Multi-Region: secondary AKS clusters + Azure Front Door
+  let multiRegion = 0;
+  if (cfg.multiRegion.enableMultiRegion) {
+    const secondaryCount = cfg.multiRegion.secondaryRegions.length;
+    // Each secondary region replicates the system node pool cost
+    multiRegion += secondaryCount * poolCost(cfg.systemNodePool);
+    // Azure Front Door profile monthly fee (approximate)
+    if (cfg.multiRegion.enableFrontDoor) {
+      multiRegion +=
+        cfg.multiRegion.frontDoorSkuName === 'Premium_AzureFrontDoor' ? 330 : 35;
+    }
+  }
+
+  const total = systemPool + userPools + monitoring + addons + storage + multiRegion;
+  return { systemPool, userPools, monitoring, addons, storage, multiRegion, total };
 }
