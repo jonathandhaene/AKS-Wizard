@@ -1,5 +1,6 @@
 import { WizardLayout } from '../components/WizardLayout';
 import { useWizard } from '../contexts/WizardContext';
+import { estimateMonthlyCost } from '../utils/costEstimator';
 
 interface Check {
   label: string;
@@ -47,6 +48,8 @@ export function Review() {
 
   const allOk = checks.every((c) => c.ok);
 
+  const cost = estimateMonthlyCost(config);
+
   const Section = ({ title, items }: { title: string; items: [string, string][] }) => (
     <div className="mb-4">
       <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
@@ -90,6 +93,45 @@ export function Review() {
             )}
           </div>
         ))}
+      </div>
+
+      {/* Cost Estimator */}
+      <div className="card mb-6">
+        <div className="section-title">💰 Estimated Monthly Cost</div>
+        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+          Approximate on-demand pricing (USD). Actual costs vary by region, reserved instances, and
+          usage. Use the{' '}
+          <a
+            href="https://azure.microsoft.com/en-us/pricing/calculator/"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: 'var(--accent)' }}
+          >
+            Azure Pricing Calculator
+          </a>{' '}
+          for precise estimates.
+        </p>
+        <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+          {[
+            ['System Node Pool', `~$${cost.systemPool}/mo`],
+            ...(cost.userPools > 0 ? [['User Node Pool(s)', `~$${cost.userPools}/mo`] as [string, string]] : []),
+            ...(cost.monitoring > 0 ? [['Monitoring', `~$${cost.monitoring}/mo`] as [string, string]] : []),
+            ...(cost.addons > 0 ? [['Add-ons', `~$${cost.addons}/mo`] as [string, string]] : []),
+            ...(cost.storage > 0 ? [['Storage', `~$${cost.storage}/mo`] as [string, string]] : []),
+          ].map(([label, value]) => (
+            <div key={label} className="flex justify-between py-1.5 text-sm">
+              <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
+              <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{value}</span>
+            </div>
+          ))}
+        </div>
+        <div
+          className="flex justify-between py-2 mt-2 text-sm font-bold border-t"
+          style={{ borderColor: 'var(--border)', color: 'var(--accent)' }}
+        >
+          <span>Estimated Total</span>
+          <span>~${cost.total}/month</span>
+        </div>
       </div>
 
       {/* Summary */}
@@ -148,6 +190,8 @@ export function Review() {
             ['Load Balancer SKU', config.loadBalancerSku],
             ['Service CIDR', config.serviceCidr],
             ['Network Policy', config.networkPolicy],
+            ['Ingress Controller', config.ingressController],
+            ['Service Mesh', config.enableServiceMesh ? '✅ Enabled' : 'Disabled'],
           ]}
         />
 
@@ -157,6 +201,8 @@ export function Review() {
             ['RBAC', config.enableRbac ? '✅ Enabled' : '❌ Disabled'],
             ['Azure AD', config.enableAzureAd ? '✅ Enabled' : 'Disabled'],
             ['Pod Identity', config.enablePodIdentity ? '✅ Enabled' : 'Disabled'],
+            ['Image Scanning', config.enableImageScanning ? '✅ Enabled' : 'Disabled'],
+            ['Pod Security Admission', config.podSecurityAdmission],
             ['Auto-Upgrade Channel', config.autoUpgradeChannel],
           ]}
         />
@@ -166,11 +212,27 @@ export function Review() {
           items={[
             ['Container Insights', config.enableContainerInsights ? '✅ Enabled' : 'Disabled'],
             ['Prometheus', config.enablePrometheus ? '✅ Enabled' : 'Disabled'],
+            ['Alerts', config.enableAlerts ? '✅ Enabled' : 'Disabled'],
+            ['Diagnostic Settings', config.enableDiagnosticSettings ? '✅ Enabled' : 'Disabled'],
             ['Key Vault Provider', config.enableKeyVaultProvider ? '✅ Enabled' : 'Disabled'],
             ['KEDA', config.enableKeda ? '✅ Enabled' : 'Disabled'],
             ['Dapr', config.enableDapr ? '✅ Enabled' : 'Disabled'],
             ['ACR Integration', config.enableAcrIntegration ? `✅ ${config.containerRegistryName || 'Enabled'}` : 'Disabled'],
           ]}
+        />
+
+        <Section
+          title="Storage"
+          items={[
+            ['Persistent Volumes', config.enablePersistentVolumes ? '✅ Enabled' : 'Disabled'],
+            ...(config.enablePersistentVolumes ? [['Storage Class', config.storageClass] as [string, string]] : []),
+            ['Backup & DR', config.enableStorageBackup ? '✅ Enabled' : 'Disabled'],
+          ]}
+        />
+
+        <Section
+          title="Deployment"
+          items={[['Deployment Strategy', config.deploymentStrategy]]}
         />
       </div>
 

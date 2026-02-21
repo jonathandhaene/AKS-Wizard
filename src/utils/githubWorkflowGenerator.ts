@@ -5,6 +5,7 @@ export function generateGitHubWorkflow(cfg: WizardConfig): string {
   const resourceGroup = cfg.resourceGroupName || 'my-aks-rg';
   const registry = cfg.containerRegistryName || 'myregistry';
   const hasAcr = cfg.enableAcrIntegration && cfg.containerRegistryName;
+  const strategy = cfg.deploymentStrategy ?? 'rolling';
 
   const acrLoginStep = hasAcr
     ? `
@@ -35,8 +36,156 @@ export function generateGitHubWorkflow(cfg: WizardConfig): string {
           container-registry-password: \${{ secrets.ACR_PASSWORD }}`
     : '';
 
+  const imageRef = hasAcr
+    ? `${registry}.azurecr.io/app`
+    : 'ghcr.io/${{ github.repository }}';
+
+  // ── Deploy job body based on strategy ─────────────────────────────────────
+
+  const rollingDeploy = `
+  # ─── Deploy to AKS (Rolling Update) ─────────────────────────────────────────
+  deploy:
+    name: Deploy to AKS
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: production
+      url: https://\${{ env.CLUSTER_NAME }}.azurefd.net
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: \${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: \${{ env.RESOURCE_GROUP }}
+          cluster-name: \${{ env.CLUSTER_NAME }}
+${imagePullSecretStep}
+${k8sBakeStep}
+
+      - name: Deploy to Kubernetes
+        uses: azure/k8s-deploy@v5
+        with:
+          namespace: \${{ env.NAMESPACE }}
+          manifests: \${{ steps.bake.outputs.manifestsBundle }}
+          images: |
+            ${imageRef}: \${{ needs.build.outputs.image-tag }}
+${hasAcr ? `          imagepullsecrets: |
+            acr-pull-secret` : ''}`;
+
+  const blueGreenDeploy = `
+  # ─── Deploy to AKS (Blue/Green) ──────────────────────────────────────────────
+  deploy:
+    name: Deploy to AKS (Blue/Green)
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: production
+      url: https://\${{ env.CLUSTER_NAME }}.azurefd.net
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: \${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: \${{ env.RESOURCE_GROUP }}
+          cluster-name: \${{ env.CLUSTER_NAME }}
+${imagePullSecretStep}
+${k8sBakeStep}
+
+      - name: Deploy green slot
+        uses: azure/k8s-deploy@v5
+        with:
+          namespace: \${{ env.NAMESPACE }}
+          manifests: \${{ steps.bake.outputs.manifestsBundle }}
+          images: |
+            ${imageRef}: \${{ needs.build.outputs.image-tag }}
+          strategy: blue-green
+          action: deploy
+${hasAcr ? `          imagepullsecrets: |
+            acr-pull-secret` : ''}
+
+      - name: Route traffic to green slot
+        uses: azure/k8s-deploy@v5
+        with:
+          namespace: \${{ env.NAMESPACE }}
+          manifests: \${{ steps.bake.outputs.manifestsBundle }}
+          strategy: blue-green
+          action: promote
+
+      - name: Clean up blue slot
+        uses: azure/k8s-deploy@v5
+        with:
+          namespace: \${{ env.NAMESPACE }}
+          manifests: \${{ steps.bake.outputs.manifestsBundle }}
+          strategy: blue-green
+          action: reject`;
+
+  const canaryDeploy = `
+  # ─── Deploy to AKS (Canary) ──────────────────────────────────────────────────
+  deploy:
+    name: Deploy to AKS (Canary)
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: production
+      url: https://\${{ env.CLUSTER_NAME }}.azurefd.net
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: \${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: \${{ env.RESOURCE_GROUP }}
+          cluster-name: \${{ env.CLUSTER_NAME }}
+${imagePullSecretStep}
+${k8sBakeStep}
+
+      - name: Deploy canary (10% traffic)
+        uses: azure/k8s-deploy@v5
+        with:
+          namespace: \${{ env.NAMESPACE }}
+          manifests: \${{ steps.bake.outputs.manifestsBundle }}
+          images: |
+            ${imageRef}: \${{ needs.build.outputs.image-tag }}
+          strategy: canary
+          action: deploy
+          percentage: 10
+${hasAcr ? `          imagepullsecrets: |
+            acr-pull-secret` : ''}
+
+      - name: Promote canary to 100%
+        uses: azure/k8s-deploy@v5
+        with:
+          namespace: \${{ env.NAMESPACE }}
+          manifests: \${{ steps.bake.outputs.manifestsBundle }}
+          strategy: canary
+          action: promote`;
+
+  const deployJob =
+    strategy === 'blue-green'
+      ? blueGreenDeploy
+      : strategy === 'canary'
+        ? canaryDeploy
+        : rollingDeploy;
+
   return `# GitHub Actions CI/CD Pipeline — generated by AKS Wizard
 # Deploys to AKS cluster: ${clusterName} in resource group: ${resourceGroup}
+# Deployment strategy: ${strategy}
 #
 # Required repository secrets:
 #   AZURE_CREDENTIALS   – Service principal JSON from: az ad sp create-for-rbac --sdk-auth
@@ -100,7 +249,7 @@ ${acrLoginStep}
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${hasAcr ? `${registry}.azurecr.io/app` : 'ghcr.io/${{ github.repository }}'}
+          images: ${imageRef}
           tags: |
             type=sha,prefix=,suffix=,format=short
 
@@ -110,40 +259,7 @@ ${acrLoginStep}
           context: .
           push: true
           tags: \${{ steps.meta.outputs.tags }}
-
-  # ─── Deploy to AKS ───────────────────────────────────────────────────────────
-  deploy:
-    name: Deploy to AKS
-    runs-on: ubuntu-latest
-    needs: build
-    environment:
-      name: production
-      url: https://\${{ env.CLUSTER_NAME }}.azurefd.net
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: \${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Set AKS context
-        uses: azure/aks-set-context@v4
-        with:
-          resource-group: \${{ env.RESOURCE_GROUP }}
-          cluster-name: \${{ env.CLUSTER_NAME }}
-${imagePullSecretStep}
-${k8sBakeStep}
-
-      - name: Deploy to Kubernetes
-        uses: azure/k8s-deploy@v5
-        with:
-          namespace: \${{ env.NAMESPACE }}
-          manifests: \${{ steps.bake.outputs.manifestsBundle }}
-          images: |
-            ${hasAcr ? `${registry}.azurecr.io/app` : 'ghcr.io/${{ github.repository }}'}: \${{ needs.build.outputs.image-tag }}
-${hasAcr ? `          imagepullsecrets: |
-            acr-pull-secret` : ''}
+${deployJob}
 
   # ─── AKS Upgrade notification ────────────────────────────────────────────────
   check-aks-upgrades:

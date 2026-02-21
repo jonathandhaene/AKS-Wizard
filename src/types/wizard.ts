@@ -2,6 +2,11 @@
 
 export type WorkloadType = 'general' | 'memory-intensive' | 'compute-intensive' | 'gpu-heavy' | 'io-intensive';
 
+export type IngressController = 'none' | 'nginx' | 'appgw' | 'traefik';
+export type PodSecurityAdmissionLevel = 'privileged' | 'baseline' | 'restricted';
+export type StorageClassType = 'default' | 'azurefile' | 'azuredisk' | 'premium-ssd';
+export type DeploymentStrategy = 'rolling' | 'blue-green' | 'canary';
+
 export type DnsPolicy = 'ClusterFirst' | 'ClusterFirstWithHostNet' | 'Default' | 'None';
 export type AffinityType = 'none' | 'required' | 'preferred';
 export type PodAntiAffinityScope = 'none' | 'preferred' | 'required';
@@ -81,6 +86,8 @@ export interface WizardConfig {
   serviceCidr: string;
   dockerBridgeCidr: string;
   loadBalancerSku: 'Standard' | 'Basic';
+  ingressController: IngressController;
+  enableServiceMesh: boolean;
 
   // Security
   enableRbac: boolean;
@@ -89,12 +96,24 @@ export interface WizardConfig {
   enablePodIdentity: boolean;
   networkPolicy: 'None' | 'azure' | 'calico';
   autoUpgradeChannel: AutoUpgradeChannel;
+  enableImageScanning: boolean;
+  podSecurityAdmission: PodSecurityAdmissionLevel;
 
   // Monitoring
   enableContainerInsights: boolean;
   logAnalyticsWorkspaceId: string;
   enablePrometheus: boolean;
   enableAzureMonitor: boolean;
+  enableAlerts: boolean;
+  enableDiagnosticSettings: boolean;
+
+  // Storage
+  enablePersistentVolumes: boolean;
+  storageClass: StorageClassType;
+  enableStorageBackup: boolean;
+
+  // Deployment
+  deploymentStrategy: DeploymentStrategy;
 
   // Workload Requirements
   workloadConfig: WorkloadConfig;
@@ -136,6 +155,8 @@ export const defaultConfig: WizardConfig = {
   serviceCidr: '10.0.0.0/16',
   dockerBridgeCidr: '172.17.0.1/16',
   loadBalancerSku: 'Standard',
+  ingressController: 'none',
+  enableServiceMesh: false,
 
   enableRbac: true,
   enableAzureAd: false,
@@ -143,11 +164,21 @@ export const defaultConfig: WizardConfig = {
   enablePodIdentity: false,
   networkPolicy: 'None',
   autoUpgradeChannel: 'patch',
+  enableImageScanning: false,
+  podSecurityAdmission: 'baseline',
 
   enableContainerInsights: true,
   logAnalyticsWorkspaceId: '',
   enablePrometheus: false,
   enableAzureMonitor: false,
+  enableAlerts: false,
+  enableDiagnosticSettings: false,
+
+  enablePersistentVolumes: false,
+  storageClass: 'default',
+  enableStorageBackup: false,
+
+  deploymentStrategy: 'rolling',
 
   workloadConfig: {
     workloadType: 'general',
@@ -193,6 +224,7 @@ export const STEPS = [
   { id: 'security', label: 'Security' },
   { id: 'monitoring', label: 'Monitoring' },
   { id: 'addons', label: 'Add-ons' },
+  { id: 'storage', label: 'Storage' },
   { id: 'review', label: 'Review' },
   { id: 'templates', label: 'Templates' },
   { id: 'deploy', label: 'Deploy' },

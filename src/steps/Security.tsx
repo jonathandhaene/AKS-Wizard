@@ -2,6 +2,7 @@ import { WizardLayout } from '../components/WizardLayout';
 import { InfoBox } from '../components/InfoBox';
 import { Tooltip } from '../components/Tooltip';
 import { useWizard } from '../contexts/WizardContext';
+import type { PodSecurityAdmissionLevel } from '../types/wizard';
 
 function Toggle({
   enabled,
@@ -42,6 +43,27 @@ function Toggle({
   );
 }
 
+const PSA_LEVELS: { value: PodSecurityAdmissionLevel; label: string; desc: string; color: string }[] = [
+  {
+    value: 'privileged',
+    label: '🔓 Privileged',
+    desc: 'No restrictions — allows all pod capabilities. Use only for trusted system namespaces.',
+    color: 'var(--error)',
+  },
+  {
+    value: 'baseline',
+    label: '🔒 Baseline',
+    desc: 'Minimally restrictive policy. Prevents known privilege escalations. Recommended default.',
+    color: 'var(--warning)',
+  },
+  {
+    value: 'restricted',
+    label: '🛡️ Restricted',
+    desc: 'Heavily restricted. Enforces current pod hardening best practices. Best for production.',
+    color: 'var(--success)',
+  },
+];
+
 export function Security() {
   const { config, updateConfig } = useWizard();
 
@@ -49,7 +71,7 @@ export function Security() {
     <WizardLayout>
       <h2 className="text-2xl font-bold mb-2">Security &amp; Identity</h2>
       <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-        Configure authentication, authorization, and network security policies.
+        Configure authentication, authorization, image scanning, and pod security policies.
       </p>
 
       <InfoBox variant="warning" title="Security Best Practices">
@@ -97,8 +119,65 @@ export function Security() {
           label="Enable Pod Identity"
           tooltip="Allows pods to use Azure Managed Identities to access Azure resources without storing credentials."
         />
+
+        <Toggle
+          enabled={config.enableImageScanning}
+          onToggle={() => updateConfig({ enableImageScanning: !config.enableImageScanning })}
+          label="Enable Container Image Scanning"
+          tooltip="Integrate Microsoft Defender for Containers to scan images for vulnerabilities in Azure Container Registry and at runtime."
+        />
       </div>
 
+      {/* Pod Security Admission */}
+      <div className="mt-5">
+        <label className="field-label">
+          Pod Security Admission Level{' '}
+          <Tooltip content="Kubernetes Pod Security Admission enforces security standards at the namespace level. Applied via labels on namespaces.">
+            <span className="ml-1 text-xs cursor-help" style={{ color: 'var(--info)' }}>
+              ⓘ
+            </span>
+          </Tooltip>
+        </label>
+        <div className="grid grid-cols-1 gap-2">
+          {PSA_LEVELS.map((level) => (
+            <button
+              key={level.value}
+              onClick={() => updateConfig({ podSecurityAdmission: level.value })}
+              className="flex items-start gap-3 p-3 rounded text-left transition-all"
+              style={{
+                background:
+                  config.podSecurityAdmission === level.value
+                    ? 'var(--accent)'
+                    : 'var(--bg-secondary)',
+                color:
+                  config.podSecurityAdmission === level.value
+                    ? 'var(--accent-text)'
+                    : 'var(--text-primary)',
+                border: `2px solid ${config.podSecurityAdmission === level.value ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: 'var(--radius)',
+              }}
+            >
+              <div>
+                <div className="font-semibold text-sm">{level.label}</div>
+                <div
+                  className="text-xs mt-0.5"
+                  style={{
+                    color:
+                      config.podSecurityAdmission === level.value
+                        ? 'var(--accent-text)'
+                        : 'var(--text-secondary)',
+                    opacity: 0.85,
+                  }}
+                >
+                  {level.desc}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Auto-Upgrade Channel */}
       <div className="mt-5">
         <label className="field-label">
           Auto-Upgrade Channel{' '}
@@ -151,6 +230,27 @@ export function Security() {
             'Only upgrades node OS images (security patches) without changing the Kubernetes version.'}
         </p>
       </div>
+
+      {/* Upgrade Guidance */}
+      <InfoBox variant="tip" title="Safe Upgrade Path Guidance">
+        <ul className="list-disc list-inside space-y-1">
+          <li>Always upgrade one minor version at a time (e.g., 1.28 → 1.29 → 1.30).</li>
+          <li>
+            Review{' '}
+            <strong>deprecated API removals</strong> in each release using the Kubernetes deprecation
+            guide before upgrading.
+          </li>
+          <li>
+            Use <strong>Planned Maintenance</strong> windows in AKS to control when upgrades occur.
+          </li>
+          <li>
+            Test upgrades in a <strong>staging cluster</strong> before applying to production.
+          </li>
+          <li>
+            Enable <strong>node surge</strong> during upgrades to minimize workload disruption.
+          </li>
+        </ul>
+      </InfoBox>
 
       <div className="mt-5">
         <label className="field-label">
