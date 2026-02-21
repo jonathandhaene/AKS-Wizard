@@ -16,6 +16,7 @@ A browser-based wizard that guides you step-by-step through configuring an Azure
 - **AKS Pods management** – Configure resource requests/limits, node affinity rules, pod anti-affinity, and pod networking options
 - **Auto-upgrade channel selector** – Configure `none`, `patch`, `stable`, `rapid`, or `node-image` upgrade strategies
 - **Azure Container Registry integration** – Attach an ACR to your cluster with a single toggle; role assignment generated automatically
+- **Multi-Region & High Availability** – Deploy AKS clusters across multiple Azure regions with Azure Front Door for zero-downtime failover
 - **Template generation** – Bicep, Terraform, and GitHub Actions CI/CD workflows generated from your choices
 - **GitHub Actions workflow** – Uses `azure/k8s-bake@v3` to render Helm charts and `azure/k8s-deploy@v5` to deploy; includes an AKS upgrade-check job
 - **PowerShell deployment script** – The Deploy step generates a ready-to-run `deploy-aks.ps1` script (no browser-based deployment)
@@ -87,6 +88,88 @@ AKS supports fine-grained control over how and when your cluster is upgraded:
 | `rapid` | Upgrades to the newest generally available release as soon as it is available |
 | `node-image` | Only upgrades node OS images; Kubernetes version unchanged |
 
+## Multi-Region & High Availability
+
+The **Multi-Region** step configures an always-on, geographically distributed architecture for your AKS clusters.
+
+### Architecture Overview
+
+```
+                         ┌──────────────────────────────────┐
+        Global Users ───▶│       Azure Front Door            │
+                         │  (Global CDN + WAF + Health Probe)│
+                         └───────────┬──────────┬────────────┘
+                                     │          │
+                    ┌────────────────▼──┐    ┌──▼────────────────┐
+                    │  Primary Region   │    │  Secondary Region  │
+                    │  (e.g. East US)   │    │  (e.g. West Europe)│
+                    │  ┌─────────────┐  │    │  ┌─────────────┐  │
+                    │  │  AKS Cluster│  │    │  │  AKS Cluster│  │
+                    │  └─────────────┘  │    │  └─────────────┘  │
+                    └───────────────────┘    └────────────────────┘
+```
+
+When enabled, the wizard generates IaC templates for each selected region alongside an Azure Front Door profile that acts as the single global entry point.
+
+### Benefits
+
+| Benefit | Description |
+|---------|-------------|
+| **Zero-downtime failover** | Front Door health probes detect regional outages and redirect traffic automatically within seconds — no manual intervention required. |
+| **Lower global latency** | Front Door routes each user to the closest healthy region, reducing round-trip times for geographically distributed users. |
+| **Active-active or active-passive** | Run all regions simultaneously (active-active) or keep secondary regions on standby (active-passive) by adjusting origin weights. |
+| **WAF protection at the edge** | WAF policies are applied globally at Front Door PoPs before requests reach your clusters, reducing backend load. |
+
+### Configuring Azure Front Door
+
+Enable **Azure Front Door** on the Multi-Region step and select your preferred SKU:
+
+| SKU | Features | Recommended for |
+|-----|----------|-----------------|
+| `Standard_AzureFrontDoor` | CDN, global routing, SSL termination, custom rules | Most production workloads |
+| `Premium_AzureFrontDoor` | Standard + WAF managed rule sets (DRS/OWASP) + Private Link origins | Workloads requiring advanced security or private backends |
+
+Enable **Web Application Firewall (WAF)** to protect against OWASP Top 10 threats and bot attacks. WAF managed rule sets require the **Premium SKU**.
+
+Enable **Health Probes** to allow Front Door to monitor each regional cluster and automatically remove unhealthy origins from the rotation.
+
+### Zero-Downtime Failover
+
+1. Front Door sends HEAD requests to each origin's health endpoint every 30 seconds.
+2. After two consecutive failed probes, the origin is marked unhealthy and excluded from routing.
+3. Traffic is transparently redirected to the remaining healthy regions.
+4. When the failed region recovers and passes health probes, it is automatically re-added.
+
+> **Best practice:** Expose a `/health` or `/readyz` endpoint in your application that validates connectivity to downstream services (database, cache). Return HTTP 200 for healthy, non-2xx for unhealthy.
+
+### Generated Templates
+
+When multi-region and Azure Front Door are enabled, the wizard appends Front Door resources to both the Bicep and Terraform templates:
+
+**Bicep snippet**
+
+```bicep
+resource frontDoorProfile 'Microsoft.Cdn/profiles@2023-05-01' = {
+  name: '${clusterName}-afd'
+  location: 'global'
+  sku: { name: 'Standard_AzureFrontDoor' }
+}
+```
+
+**Terraform snippet**
+
+```hcl
+resource "azurerm_cdn_frontdoor_profile" "afd" {
+  name                = "${var.cluster_name}-afd"
+  resource_group_name = azurerm_resource_group.rg.name
+  sku_name            = "Standard_AzureFrontDoor"
+}
+```
+
+### Secondary Regions
+
+Select one or more secondary regions in addition to the primary region configured on the Basics step. Each selected region receives a dedicated AKS cluster in the generated templates. Choose regions that are geographically spread to maximise fault isolation — for example, pair `eastus` (primary) with `westeurope` and `southeastasia` (secondary).
+
 ## Deploy to Azure – PowerShell Script
 
 The **Deploy** step generates a `deploy-aks.ps1` PowerShell script based on your wizard configuration that you can copy or download and run locally.
@@ -152,6 +235,21 @@ Before going to production with AKS Standard, confirm your team can:
 ### Which Kubernetes version should I use?
 
 Use the latest supported minor version (currently `1.31.x`) unless you have a specific compatibility requirement. AKS supports the three most recent minor versions; clusters on older versions will stop receiving security patches.
+
+### How do I configure a multi-region, always-on architecture?
+
+1. Navigate to the **Multi-Region** step in the wizard.
+2. Toggle **Enable Multi-Region Deployment** to ON.
+3. Select one or more **Secondary Regions** in addition to your primary region (set on the Basics step).
+4. Enable **Azure Front Door** and choose a SKU — **Standard** for most workloads, **Premium** for WAF managed rules or private link origins.
+5. Enable **Health Probes** to activate automatic zero-downtime failover.
+6. (Optional) Enable **WAF** for OWASP Top 10 protection at the edge.
+7. Proceed to **Templates** — the wizard appends Front Door and secondary cluster resources to the generated Bicep and Terraform templates.
+
+For a fully resilient architecture, also configure:
+- **Geo-redundant storage** (e.g., Azure Blob Storage with GRS or GZRS) for stateless assets.
+- **Azure Database for PostgreSQL Flexible Server** with read replicas in each secondary region.
+- **Azure DNS** or **Azure Traffic Manager** as a backup routing layer if Front Door is unavailable.
 
 ### How do I migrate from AKS Standard to AKS Automatic?
 
@@ -232,9 +330,12 @@ src/
   contexts/     – React contexts (WizardContext, ThemeContext)
   steps/        – One component per wizard step
     MaturityAssessment.tsx  – Team readiness questionnaire
+    MultiRegion.tsx         – Multi-region deployment, Azure Front Door, WAF, health probes
     Pods.tsx                – Pod resource limits, affinity rules, and networking
-  types/        – TypeScript types (WizardConfig, AksMode, AutoUpgradeChannel, …)
+  types/        – TypeScript types (WizardConfig, AksMode, AutoUpgradeChannel, MultiRegionConfig, …)
   utils/        – Template generators (Bicep, Terraform, PowerShell, GitHub Actions workflow)
+    bicepGenerator.ts           – Bicep IaC including Azure Front Door resources
+    terraformGenerator.ts       – Terraform HCL including Azure Front Door resources
     githubWorkflowGenerator.ts  – GitHub Actions CI/CD pipeline with k8s-bake and ACR
 scripts/
   deploy-aks.ps1 – Standalone PowerShell deployment script template
