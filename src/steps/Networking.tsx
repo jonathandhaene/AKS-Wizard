@@ -8,8 +8,8 @@ const INGRESS_OPTIONS: { value: IngressController; label: string; desc: string }
   { value: 'none', label: '🚫 None', desc: 'No managed ingress. Configure manually.' },
   {
     value: 'nginx',
-    label: '🔷 NGINX',
-    desc: 'Community-standard ingress controller. Flexible and widely supported.',
+    label: '🔷 NGINX ⚠️ Deprecated',
+    desc: 'Community ingress-nginx controller. Retiring March 2026 — consider Gateway API or the F5/NGINX Inc. Ingress Controller instead.',
   },
   {
     value: 'appgw',
@@ -192,6 +192,51 @@ export function Networking() {
               </button>
             ))}
           </div>
+          {config.ingressController === 'nginx' && (
+            <InfoBox variant="warning" title="ingress-nginx is retiring in March 2026">
+              The community-maintained <strong>ingress-nginx</strong> controller is being retired
+              as of March 2026 and will no longer receive security updates. Consider migrating to:
+              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                <li>
+                  <strong>Kubernetes Gateway API</strong> — the official successor to Ingress (
+                  <a
+                    href="https://gateway-api.sigs.k8s.io/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    gateway-api.sigs.k8s.io
+                  </a>
+                  )
+                </li>
+                <li>
+                  <strong>NGINX Ingress Controller by F5/NGINX Inc.</strong> — vendor-supported
+                  alternative (
+                  <a
+                    href="https://docs.nginx.com/nginx-ingress-controller/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    docs.nginx.com
+                  </a>
+                  )
+                </li>
+              </ul>
+              <p className="mt-1">
+                See the{' '}
+                <a
+                  href="https://kubernetes.io/blog/2025/01/23/ingress-nginx-gateway-api-migration/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  official Kubernetes end-of-life announcement
+                </a>{' '}
+                for details.
+              </p>
+            </InfoBox>
+          )}
           {config.ingressController === 'appgw' && config.networkPlugin !== 'azure' && (
             <p className="mt-2 text-xs" style={{ color: 'var(--warning)' }}>
               ⚠️ Application Gateway Ingress Controller (AGIC) works best with Azure CNI.

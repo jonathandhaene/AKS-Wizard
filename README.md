@@ -180,6 +180,18 @@ Enable the **Azure Container Registry Integration** toggle on the Add-ons step a
 4. Create a `charts/app` Helm chart in your repository; the workflow uses `azure/k8s-bake@v3` to render it before deploying.
 5. If ACR integration is enabled, also add `ACR_USERNAME` and `ACR_PASSWORD` secrets.
 
+### ⚠️ Is the NGINX ingress controller still supported?
+
+The community-maintained **ingress-nginx** controller is being retired as of **March 2026** and will no longer receive security updates after that date. It is not recommended for new deployments.
+
+**Migration alternatives:**
+
+- **Kubernetes Gateway API** — the official successor to the Ingress resource, supported natively in AKS. See [gateway-api.sigs.k8s.io](https://gateway-api.sigs.k8s.io/) and the [AKS Gateway API documentation](https://learn.microsoft.com/azure/aks/application-routing-kubernetes-gateway).
+- **NGINX Ingress Controller by F5/NGINX Inc.** — a vendor-supported alternative that shares configuration syntax with ingress-nginx. See [docs.nginx.com/nginx-ingress-controller](https://docs.nginx.com/nginx-ingress-controller/).
+- **Azure Application Gateway Ingress Controller (AGIC)** — Azure-native Layer 7 load balancer with WAF support, already available in this wizard.
+
+For more details, see the [official Kubernetes end-of-life announcement](https://kubernetes.io/blog/2025/01/23/ingress-nginx-gateway-api-migration/).
+
 ### What is the difference between add-ons and extensions?
 
 AKS **add-ons** (Container Insights, Azure Policy, Key Vault Provider, HTTP Application Routing, KEDA, Dapr) are officially supported and managed by Microsoft. **Extensions** are cluster extensions installed via the Azure CLI or portal and are typically community-supported or preview features.

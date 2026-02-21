@@ -485,7 +485,7 @@ Enable Service Mesh (Open Service Mesh / Istio)  ⓘ  [ OFF ]
 | **Service CIDR** | CIDR notation (default: `10.0.0.0/16`) | IP address range reserved for Kubernetes internal **Service** objects (ClusterIP). | Must not overlap with any VNet subnet or Pod CIDR. A `/16` provides up to 65,536 service IPs, which is more than sufficient for virtually all clusters. |
 | **Docker Bridge CIDR** | CIDR notation (default: `172.17.0.1/16`) | IP range for the legacy Docker bridge network on each node, used for container-to-container communication within a node. | Rarely needs changing. Ensure it does not conflict with your VNet or on-premises networks if using VPN/ExpressRoute. |
 | **Load Balancer SKU** | **Standard** (default), Basic | The Azure Load Balancer tier provisioned for external-facing services. | **Standard** supports Availability Zones, up to 1,000 backend pool members, health probe diagnostics, and is required for production. **Basic** is limited and Microsoft is deprecating it; avoid for new deployments. |
-| **Ingress Controller** | **None** (default), NGINX, Application Gateway, Traefik | Deploys and configures an ingress controller to route HTTP/HTTPS traffic into the cluster. | **None**: no managed ingress; configure manually after deployment. **NGINX**: community-standard, flexible and widely supported. **Application Gateway**: Azure-native Layer 7 load balancer with WAF support (AGIC). **Traefik**: cloud-native with automatic Let's Encrypt support. |
+| **Ingress Controller** | **None** (default), NGINX ⚠️, Application Gateway, Traefik | Deploys and configures an ingress controller to route HTTP/HTTPS traffic into the cluster. | **None**: no managed ingress; configure manually after deployment. **NGINX** ⚠️ **(deprecated — retiring March 2026)**: community-maintained ingress-nginx controller; no longer recommended for new deployments. Migrate to the [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io/) or the [F5/NGINX Inc. Ingress Controller](https://docs.nginx.com/nginx-ingress-controller/). **Application Gateway**: Azure-native Layer 7 load balancer with WAF support (AGIC). **Traefik**: cloud-native with automatic Let's Encrypt support. |
 | **Enable Service Mesh** | ❌ OFF | Deploys a service mesh (Open Service Mesh or Istio) to the cluster. | Adds mutual TLS (mTLS) between services, fine-grained traffic policies, and enhanced observability. Adds operational complexity and resource overhead. |
 
 ### IP Address Planning Checklist
@@ -505,6 +505,9 @@ When using **Azure CNI**, ensure the following IP ranges **do not overlap**:
 - [Azure Standard Load Balancer overview](https://learn.microsoft.com/azure/load-balancer/load-balancer-overview)
 - [Plan IP addressing for AKS](https://learn.microsoft.com/azure/aks/configure-azure-cni#plan-ip-addressing-for-your-cluster)
 - [Ingress controllers in AKS](https://learn.microsoft.com/azure/aks/concepts-network#ingress-controllers)
+- [ingress-nginx end-of-life announcement (Kubernetes blog)](https://kubernetes.io/blog/2025/01/23/ingress-nginx-gateway-api-migration/)
+- [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io/)
+- [NGINX Ingress Controller by F5/NGINX Inc.](https://docs.nginx.com/nginx-ingress-controller/)
 - [Service mesh with AKS (Istio)](https://learn.microsoft.com/azure/aks/istio-about)
 
 ---
