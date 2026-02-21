@@ -868,6 +868,184 @@ Automatic failover with Azure Front Door requires no manual intervention:
 
 > **Best practice:** Expose a `/health` or `/readyz` endpoint in your workload that checks downstream dependencies (database, cache). A 200 response means the origin is healthy; any non-2xx response triggers failover.
 
+### Active-Active vs Active-Passive
+
+Choosing the right topology depends on your availability requirements, budget, and consistency needs.
+
+| | Active-Active | Active-Passive |
+|---|---|---|
+| **Traffic distribution** | All regions serve live traffic simultaneously | Only primary region serves traffic; secondary is on standby |
+| **Failover time** | Near-instant (Front Door stops routing to failed region) | Seconds to minutes (dependent on probe interval + warm-up) |
+| **Cost** | Higher — all regions run at full capacity | Lower — secondary region can scale to zero (or minimum) when idle |
+| **Consistency complexity** | Higher — writes must be replicated across all regions in near-real-time | Lower — secondary is mostly read-only until failover |
+| **Recommended for** | Latency-sensitive, high-traffic global applications | Cost-sensitive applications with less strict latency requirements |
+
+**Configuring origin weights in Azure Front Door:**
+
+- **Active-active:** Assign equal weights (e.g., `1000`) to all origins in the origin group. Front Door balances requests based on latency.
+- **Active-passive:** Assign a high weight (e.g., `1000`) to the primary origin and a low weight (e.g., `1`) to the secondary. The secondary only receives traffic when the primary is marked unhealthy by health probes.
+
+### RTO and RPO Targets
+
+Define your recovery objectives before choosing a topology:
+
+| Metric | Definition | Typical target |
+|--------|-----------|----------------|
+| **RTO** (Recovery Time Objective) | Maximum acceptable downtime before the service must be restored | < 30 seconds with active-active; 1–5 minutes with active-passive |
+| **RPO** (Recovery Point Objective) | Maximum acceptable data loss measured in time | < 1 second with synchronous geo-replication; 1–15 minutes with asynchronous |
+
+> **Tip:** Azure Front Door can achieve RTO of under 30 seconds (two failed probes at 15-second intervals). To meet an RPO near zero, pair Front Door with synchronous replication services such as Azure Cosmos DB (multi-region writes) or Azure Cache for Redis with geo-replication.
+
+### Complementary Azure Services for Always-On Architectures
+
+A truly always-on architecture requires more than just AKS clusters behind Front Door. Each stateful component in your stack needs its own geo-redundancy strategy.
+
+#### Azure Cosmos DB
+
+Azure Cosmos DB is the recommended database for multi-region, always-on workloads because it natively supports multi-region writes and configurable consistency levels.
+
+| Feature | Benefit |
+|---------|---------|
+| **Multi-region writes** | Write to any region; conflicts resolved automatically by the platform |
+| **Five consistency levels** | Choose between strong, bounded staleness, session, consistent prefix, and eventual consistency |
+| **Automatic failover** | Configure priority-ordered failover regions; Cosmos DB promotes the next region within minutes if the primary is unavailable |
+| **99.999% SLA** | With multi-region writes enabled, Cosmos DB provides a five-nines availability SLA ([see Cosmos DB SLA](https://azure.microsoft.com/support/legal/sla/cosmos-db/)) |
+
+**Recommended configuration for always-on:**
+1. Enable **multi-region writes** and add all regions where AKS clusters are deployed.
+2. Set **consistency level** to `Session` (default) for most workloads; use `BoundedStaleness` when you need a tighter RPO.
+3. Configure **automatic failover** with a priority list matching your AKS region order.
+
+#### Azure Cache for Redis
+
+Use Azure Cache for Redis with **geo-replication** to ensure cached state is available in each region:
+
+- **Active geo-replication** (Enterprise tier): Multi-region active-active replication with sub-second synchronisation.
+- **Passive geo-replication** (Premium tier): Primary-secondary replication; the secondary becomes primary during failover.
+
+For session state, prefer `geo-replication` + a sticky-session-free application design so that users can be served by any region transparently.
+
+#### Azure Service Bus / Event Hubs
+
+For asynchronous messaging:
+
+| Service | Geo-redundancy option | Notes |
+|---------|-----------------------|-------|
+| **Azure Service Bus** | Geo-disaster recovery (active-passive) | Metadata (queues, topics) is replicated; in-flight messages are not. Failover is initiated manually or via Azure Health alerts. |
+| **Azure Event Hubs** | Geo-disaster recovery or Geo-replication (preview) | Similar to Service Bus for namespace failover. Geo-replication (preview) replicates event data. |
+
+> **Architecture note:** For event-driven workloads requiring RPO near zero, use separate Event Hubs namespaces per region and replicate events with Azure Event Grid or a custom relay function, rather than relying on metadata-only geo-disaster recovery.
+
+#### Azure Key Vault
+
+Azure Key Vault automatically replicates contents to a paired region within the same geography. No additional configuration is required for secrets and certificates — they are available in the secondary region within minutes of a regional outage.
+
+For multi-region deployments spanning non-paired geographies (e.g., East US + Southeast Asia), create a Key Vault instance in each region and use a secrets synchronisation policy (Azure Policy + Logic App or a dedicated secrets operator).
+
+#### Azure Container Registry
+
+Enable **geo-replication** on your ACR instance to push images once and have them available in all regions with low-latency pulls:
+
+```bash
+az acr replication create \
+  --registry <registry-name> \
+  --location westeurope
+
+az acr replication create \
+  --registry <registry-name> \
+  --location southeastasia
+```
+
+Each AKS cluster then pulls images from the nearest ACR replica, reducing pull latency and avoiding cross-region egress charges.
+
+#### Azure DNS and Traffic Manager
+
+Azure Front Door is the recommended global routing layer for HTTP/HTTPS workloads. For non-HTTP workloads (e.g., TCP, gRPC) or as a fallback DNS layer:
+
+| Service | Layer | Use case |
+|---------|-------|---------|
+| **Azure Front Door** | Layer 7 (HTTP/HTTPS) | Web apps, REST APIs, WebSocket — primary recommendation |
+| **Azure Traffic Manager** | DNS (Layer 4) | TCP endpoints, non-HTTP protocols, fallback routing if Front Door is unavailable |
+| **Azure DNS** | DNS resolution | Custom domain delegation; pair with Traffic Manager for DNS-based failover |
+
+### Data Replication and Consistency Considerations
+
+Multi-region writes introduce the risk of **write conflicts** when two regions accept writes to the same record simultaneously. Plan your conflict resolution strategy before enabling multi-region writes:
+
+1. **Last-writer wins (LWW):** The write with the latest timestamp is kept. Simple but may silently discard data. Supported by Cosmos DB.
+2. **Custom conflict resolution:** A user-defined stored procedure resolves conflicts. Requires application-specific logic. Supported by Cosmos DB.
+3. **Optimistic concurrency:** Use ETags (HTTP) or version fields to detect conflicts at the application layer and surface them to the user for manual resolution.
+4. **CRDT-based merging:** Conflict-free Replicated Data Types automatically merge concurrent writes without conflicts. Suitable for counters, sets, and append-only structures.
+
+> **Recommended approach for most workloads:** Use **session consistency** in Cosmos DB, route each user session to a consistent region via Front Door session affinity, and accept eventual consistency only for non-critical reads (e.g., analytics, cached dashboards).
+
+### Step-by-Step: Configuring a Full Always-On Architecture
+
+Follow these steps to build a production-grade multi-region, always-on deployment with this wizard:
+
+1. **Cluster Basics** — Set your **primary region** (e.g., `eastus`). Choose **AKS Standard** for full control, or **AKS Automatic** for managed operations.
+2. **Node Pools** — Enable **auto-scaling** and spread nodes across **Availability Zones** (`--zones 1 2 3`) within the primary region for intra-region resiliency.
+3. **Networking** — Use **Azure CNI** or **Azure CNI Overlay** for pod networking. Reserve a large enough address space to accommodate all regions without CIDR conflicts.
+4. **Add-ons** — Enable **Azure Container Registry integration** and enable geo-replication on the ACR instance (outside the wizard, using the Azure CLI or portal).
+5. **Multi-Region** (this step):
+   a. Enable **Multi-Region Deployment**.
+   b. Select at least one secondary region that is geographically distant from the primary (e.g., `westeurope` or `southeastasia`).
+   c. Enable **Azure Front Door** (Premium SKU recommended for WAF).
+   d. Enable **Health Probes** — configure your workload's `/health` endpoint to check all downstream dependencies.
+   e. Enable **WAF** if your workload is internet-facing.
+6. **After generating templates**, manually add the following resources to achieve full always-on:
+   - Azure Cosmos DB with multi-region writes enabled in all selected regions.
+   - Azure Cache for Redis (Enterprise tier) with active geo-replication.
+   - Azure Container Registry with geo-replication to each region.
+   - Azure Key Vault in each region (or rely on automatic replication within a geography).
+7. **Monitoring** — Enable **Container Insights** and **Azure Monitor alerts** (Step 9). Create cross-region dashboards in Azure Monitor Workbooks to track regional health, latency, and failover events.
+8. **Test failover** — See the [Failover Testing](#failover-testing) section below before going to production.
+
+### Failover Testing
+
+Never trust a failover until you have tested it. Run the following tests on a staging environment before go-live:
+
+#### Manual Regional Failover Test
+
+1. Identify the primary region's Front Door origin hostname (e.g., `<cluster-lb-ip>.eastus.cloudapp.azure.com`).
+2. Temporarily block health probe traffic to the primary origin (e.g., by shutting down the `/health` endpoint or blocking port 443 via a Network Security Group rule).
+3. Monitor the Front Door routing metrics in Azure Monitor — within two failed probe intervals, traffic should shift entirely to the secondary region.
+4. Verify application availability from at least two geographic locations using an external monitoring tool.
+5. Restore the primary region and confirm that Front Door re-adds it to the rotation within one successful probe interval.
+
+#### Database Failover Test (Cosmos DB)
+
+1. In the Azure portal, navigate to your Cosmos DB account → **Replicate data globally** → **Manual failover**.
+2. Promote the secondary region to primary.
+3. Verify that write requests succeed from the previously secondary AKS cluster.
+4. Fail back to the original primary region.
+
+#### Chaos Engineering
+
+For a more rigorous approach, use **Azure Chaos Studio** to inject regional faults:
+
+```bash
+# Example: Stop all pods in a namespace to simulate a regional AKS outage
+kubectl delete pods --all -n default --context <secondary-cluster-context>
+```
+
+Or use the Azure Chaos Studio portal to target AKS, VMs, or networking components directly.
+
+### Cost Considerations
+
+Multi-region deployments multiply your infrastructure costs. Use the following guidance to manage spending:
+
+| Component | Cost driver | Optimisation |
+|-----------|------------|--------------|
+| **AKS node pools** | VM compute hours per region | Use **spot instances** for non-critical workloads in secondary regions; scale secondary to 1 node when idle (active-passive) |
+| **Azure Front Door** | Routing rules + data transfer | The Standard SKU is significantly cheaper than Premium; upgrade to Premium only when WAF managed rules or Private Link are required |
+| **Azure Cosmos DB** | Request units (RUs) + storage per region | Share a Cosmos DB account across environments; use **serverless** mode for dev/test replicas |
+| **Azure Cache for Redis** | Cache tier per region | Use **Basic** tier in dev/test secondary regions; **Enterprise** for production active-active |
+| **Azure Container Registry** | Geo-replication per region | Each geo-replica incurs the same cost as the primary registry tier |
+| **Egress** | Cross-region data transfer | Keep data processing within the region where data originates; use Azure Private Link to avoid egress charges for internal traffic |
+
+> **Estimate your costs** using the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) before deploying to production. Costs vary significantly based on VM sizes, traffic volumes, and region choices — always use the calculator for current estimates rather than relying on any fixed figures.
+
 ### Generated Templates
 
 When multi-region is enabled, the wizard appends the following resources to the generated Bicep and Terraform templates:
@@ -927,6 +1105,12 @@ resource "azurerm_cdn_frontdoor_origin_group" "aks" {
 - [Health probes in Azure Front Door](https://learn.microsoft.com/azure/frontdoor/health-probes)
 - [Multi-region AKS architecture](https://learn.microsoft.com/azure/architecture/reference-architectures/containers/aks-multi-region/aks-multi-cluster)
 - [Azure Front Door with AKS](https://learn.microsoft.com/azure/aks/load-balancer-standard#azure-front-door)
+- [Business continuity and disaster recovery for AKS](https://learn.microsoft.com/azure/aks/operator-best-practices-multi-region)
+- [Azure Cosmos DB global distribution](https://learn.microsoft.com/azure/cosmos-db/distribute-data-globally)
+- [Azure Cache for Redis geo-replication](https://learn.microsoft.com/azure/azure-cache-for-redis/cache-how-to-geo-replication)
+- [Azure Container Registry geo-replication](https://learn.microsoft.com/azure/container-registry/container-registry-geo-replication)
+- [Azure Traffic Manager overview](https://learn.microsoft.com/azure/traffic-manager/traffic-manager-overview)
+- [Azure Chaos Studio overview](https://learn.microsoft.com/azure/chaos-studio/chaos-studio-overview)
 
 ---
 
@@ -1566,9 +1750,14 @@ The table below summarises every configurable field in the wizard, its default v
 
 | Term | Definition |
 |------|-----------|
+| **Always-On Architecture** | A system design where the service remains available across regional failures, typically achieved by running redundant instances in multiple Azure regions behind Azure Front Door. |
+| **Azure Chaos Studio** | An Azure service for fault injection and resilience testing, allowing you to simulate regional outages, VM failures, and network disruptions in a controlled way. |
+| **Azure Cosmos DB** | A globally distributed, multi-model database service that supports multi-region writes, five consistency levels, and a 99.999% SLA when multi-region writes are enabled. |
 | **Azure Front Door** | A global CDN and application delivery network (ADN) from Microsoft that provides intelligent traffic routing, SSL termination, WAF, and DDoS protection. |
 | **Active-Active** | A multi-region topology where all regions serve live traffic simultaneously, with load distributed by Azure Front Door. |
 | **Active-Passive** | A multi-region topology where the secondary region runs at reduced capacity and only receives traffic if the primary region fails. |
+| **CRDT** | Conflict-free Replicated Data Type — a data structure designed to be merged across replicas without conflicts; suitable for counters, sets, and append-only logs in multi-region systems. |
+| **Geo-replication** | The process of replicating data or resources to one or more secondary Azure regions to enable low-latency access and regional fault tolerance. |
 | **AKS** | Azure Kubernetes Service — Microsoft's managed Kubernetes offering. |
 | **AKS Automatic** | A fully managed AKS mode where Azure handles node provisioning, upgrades, and security. |
 | **AKS Standard** | The standard AKS mode giving platform teams full control over cluster configuration. |
@@ -1593,6 +1782,8 @@ The table below summarises every configurable field in the wizard, its default v
 | **Pod Security Admission** | A Kubernetes built-in admission controller enforcing security standards (Privileged / Baseline / Restricted). |
 | **PVC** | Persistent Volume Claim — a request for storage by a pod in Kubernetes. |
 | **RBAC** | Role-Based Access Control — a security model that assigns permissions to roles. |
+| **RPO** | Recovery Point Objective — the maximum acceptable amount of data loss measured in time; defines how far back in time a system can be restored after a failure. |
+| **RTO** | Recovery Time Objective — the maximum acceptable duration of a service outage; defines how quickly a system must be restored after a failure. |
 | **SKU** | Stock Keeping Unit — Azure's term for a pricing/capability tier. |
 | **Terraform** | An open-source IaC tool by HashiCorp that supports multiple cloud providers. |
 | **WAF** | Web Application Firewall — a security layer that filters and monitors HTTP traffic against common exploits (OWASP Top 10). |
@@ -1613,6 +1804,19 @@ The table below summarises every configurable field in the wizard, its default v
 - [AKS Automatic overview](https://learn.microsoft.com/azure/aks/intro-aks-automatic)
 - [Azure Front Door overview](https://learn.microsoft.com/azure/frontdoor/front-door-overview)
 - [Azure Front Door WAF](https://learn.microsoft.com/azure/web-application-firewall/afds/afds-overview)
+- [Azure Front Door health probes](https://learn.microsoft.com/azure/frontdoor/health-probes)
+- [Azure Front Door SKU comparison](https://learn.microsoft.com/azure/frontdoor/standard-premium/overview)
+- [Azure Cosmos DB global distribution](https://learn.microsoft.com/azure/cosmos-db/distribute-data-globally)
+- [Azure Cosmos DB multi-region writes](https://learn.microsoft.com/azure/cosmos-db/multi-region-writes)
+- [Azure Cosmos DB consistency levels](https://learn.microsoft.com/azure/cosmos-db/consistency-levels)
+- [Azure Cache for Redis geo-replication](https://learn.microsoft.com/azure/azure-cache-for-redis/cache-how-to-geo-replication)
+- [Azure Service Bus geo-disaster recovery](https://learn.microsoft.com/azure/service-bus-messaging/service-bus-geo-dr)
+- [Azure Container Registry geo-replication](https://learn.microsoft.com/azure/container-registry/container-registry-geo-replication)
+- [Azure Key Vault availability and redundancy](https://learn.microsoft.com/azure/key-vault/general/disaster-recovery-guidance)
+- [Azure Traffic Manager overview](https://learn.microsoft.com/azure/traffic-manager/traffic-manager-overview)
+- [Azure Chaos Studio overview](https://learn.microsoft.com/azure/chaos-studio/chaos-studio-overview)
+- [Business continuity and disaster recovery for AKS](https://learn.microsoft.com/azure/aks/operator-best-practices-multi-region)
+- [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/)
 
 ### Kubernetes Official Documentation
 
