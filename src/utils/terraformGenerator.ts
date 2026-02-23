@@ -148,7 +148,7 @@ resource "azurerm_role_assignment" "acr_pull" {
   scope                            = "/subscriptions/${cfg.subscriptionId}/resourceGroups/${cfg.resourceGroupName}/providers/Microsoft.ContainerRegistry/registries/${cfg.containerRegistryName}"
   skip_service_principal_aad_check = true
 }
-` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorTerraform(cfg) : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableApim ? generateApimTerraform(cfg) : ''}output "kube_config" {
+` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorTerraform(cfg) : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableApim ? generateApimTerraform(cfg) : ''}${cfg.hubSpoke.enableHubSpoke ? generateHubSpokeTerraform(cfg) : ''}output "kube_config" {
   value     = azurerm_kubernetes_cluster.aks.kube_config_raw
   sensitive = true
 }
@@ -371,6 +371,206 @@ output "apim_gateway_url" {
 
 output "apim_portal_url" {
   value = azurerm_api_management.apim.developer_portal_url
+}
+`;
+}
+
+function generateHubSpokeTerraform(cfg: WizardConfig): string {
+  const hs = cfg.hubSpoke;
+  const clusterBase = cfg.clusterName || 'aks';
+
+  // Carve non-overlapping subnets by offsetting the last two octets of the base IP.
+  function carveSubnet(baseCidr: string, offset: number, prefixLen: number): string {
+    const [ip] = baseCidr.split('/');
+    const parts = ip.split('.').map(Number);
+    parts[3] += offset;
+    if (parts[3] >= 256) { parts[2] += Math.floor(parts[3] / 256); parts[3] %= 256; }
+    return `${parts.join('.')}/${prefixLen}`;
+  }
+
+  // AzureFirewallSubnet and AzureBastionSubnet both require /26 minimum.
+  // Carve them at offset 0 and offset 64 so they never overlap.
+  const fwSubnetCidr = carveSubnet(hs.hubVnetCidr, 0, 26);
+  const bastionSubnetCidr = carveSubnet(hs.hubVnetCidr, 64, 26);
+
+  const hubVnetBlock = hs.hubMode === 'new'
+    ? `
+# ─── Hub VNet ──────────────────────────────────────────────────────────────────
+resource "azurerm_virtual_network" "hub_vnet" {
+  name                = "${clusterBase}-hub-vnet"
+  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  address_space       = ["${hs.hubVnetCidr}"]
+
+  tags = {
+    Environment = "Production"
+    ManagedBy   = "AKS-Wizard"
+    Role        = "Hub"
+  }
+}
+${hs.enableAzureFirewall ? `
+resource "azurerm_subnet" "hub_firewall_subnet" {
+  name                 = "AzureFirewallSubnet"
+  resource_group_name  = azurerm_resource_group.aks_rg.name
+  virtual_network_name = azurerm_virtual_network.hub_vnet.name
+  address_prefixes     = ["${fwSubnetCidr}"]
+}
+` : ''}${hs.enableBastion ? `
+resource "azurerm_subnet" "hub_bastion_subnet" {
+  name                 = "AzureBastionSubnet"
+  resource_group_name  = azurerm_resource_group.aks_rg.name
+  virtual_network_name = azurerm_virtual_network.hub_vnet.name
+  address_prefixes     = ["${bastionSubnetCidr}"]
+}
+` : ''}`
+    : `# Hub VNet is pre-existing — set this local to its resource ID
+locals {
+  hub_vnet_id = "${hs.existingHubVnetId}"
+}
+`;
+
+  const firewallBlock = hs.hubMode === 'new' && hs.enableAzureFirewall
+    ? `
+# ─── Azure Firewall ────────────────────────────────────────────────────────────
+resource "azurerm_public_ip" "fw_pip" {
+  name                = "${clusterBase}-fw-pip"
+  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  tags                = { ManagedBy = "AKS-Wizard" }
+}
+
+resource "azurerm_firewall" "hub_fw" {
+  name                = "${clusterBase}-hub-fw"
+  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  sku_name            = "AZFW_VNet"
+  sku_tier            = "Premium"
+
+  ip_configuration {
+    name                 = "ipconfig"
+    subnet_id            = azurerm_subnet.hub_firewall_subnet.id
+    public_ip_address_id = azurerm_public_ip.fw_pip.id
+  }
+
+  tags = { ManagedBy = "AKS-Wizard" }
+}
+
+output "firewall_private_ip" {
+  value = azurerm_firewall.hub_fw.ip_configuration[0].private_ip_address
+}
+`
+    : '';
+
+  const bastionBlock = hs.hubMode === 'new' && hs.enableBastion
+    ? `
+# ─── Azure Bastion ─────────────────────────────────────────────────────────────
+resource "azurerm_public_ip" "bastion_pip" {
+  name                = "${clusterBase}-bastion-pip"
+  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  tags                = { ManagedBy = "AKS-Wizard" }
+}
+
+resource "azurerm_bastion_host" "hub_bastion" {
+  name                = "${clusterBase}-hub-bastion"
+  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = azurerm_resource_group.aks_rg.name
+
+  ip_configuration {
+    name                 = "ipconfig"
+    subnet_id            = azurerm_subnet.hub_bastion_subnet.id
+    public_ip_address_id = azurerm_public_ip.bastion_pip.id
+  }
+
+  tags = { ManagedBy = "AKS-Wizard" }
+}
+`
+    : '';
+
+  const udrBlock = hs.enableAzureFirewall && hs.enableEgressViaFirewall
+    ? `
+# ─── UDR: route AKS egress through Azure Firewall ─────────────────────────────
+resource "azurerm_route_table" "aks_udr" {
+  name                          = "${clusterBase}-spoke-udr"
+  location                      = azurerm_resource_group.aks_rg.location
+  resource_group_name           = azurerm_resource_group.aks_rg.name
+  disable_bgp_route_propagation = true
+  tags                          = { ManagedBy = "AKS-Wizard" }
+
+  route {
+    name                   = "route-to-firewall"
+    address_prefix         = "0.0.0.0/0"
+    next_hop_type          = "VirtualAppliance"
+    next_hop_in_ip_address = ${hs.hubMode === 'new' ? 'azurerm_firewall.hub_fw.ip_configuration[0].private_ip_address' : '"<firewall-private-ip>"'}
+  }
+}
+
+resource "azurerm_subnet_route_table_association" "aks_subnet_udr" {
+  subnet_id      = azurerm_subnet.aks_subnet.id
+  route_table_id = azurerm_route_table.aks_udr.id
+}
+`
+    : '';
+
+  const hubVnetRef = hs.hubMode === 'new'
+    ? 'azurerm_virtual_network.hub_vnet.id'
+    : 'local.hub_vnet_id';
+
+  return `
+# ═══════════════════════════════════════════════════════════════════════════════
+# Hub-Spoke Networking
+# ═══════════════════════════════════════════════════════════════════════════════
+${hubVnetBlock}
+# ─── Spoke VNet ────────────────────────────────────────────────────────────────
+resource "azurerm_virtual_network" "spoke_vnet" {
+  name                = "${clusterBase}-spoke-vnet"
+  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  address_space       = ["${hs.spokeVnetCidr}"]
+
+  tags = {
+    Environment = "Production"
+    ManagedBy   = "AKS-Wizard"
+    Role        = "Spoke"
+  }
+}
+
+resource "azurerm_subnet" "aks_subnet" {
+  name                 = "aks-subnet"
+  resource_group_name  = azurerm_resource_group.aks_rg.name
+  virtual_network_name = azurerm_virtual_network.spoke_vnet.name
+  address_prefixes     = ["${hs.aksSubnetCidr}"]
+}
+
+# ─── VNet Peerings ─────────────────────────────────────────────────────────────
+resource "azurerm_virtual_network_peering" "hub_to_spoke" {
+  name                      = "hub-to-spoke"
+  resource_group_name       = azurerm_resource_group.aks_rg.name
+  virtual_network_name      = ${hs.hubMode === 'new' ? 'azurerm_virtual_network.hub_vnet.name' : '"<hub-vnet-name>"'}
+  remote_virtual_network_id = azurerm_virtual_network.spoke_vnet.id
+  allow_virtual_network_access = true
+  allow_forwarded_traffic      = true
+}
+
+resource "azurerm_virtual_network_peering" "spoke_to_hub" {
+  name                      = "spoke-to-hub"
+  resource_group_name       = azurerm_resource_group.aks_rg.name
+  virtual_network_name      = azurerm_virtual_network.spoke_vnet.name
+  remote_virtual_network_id = ${hubVnetRef}
+  allow_virtual_network_access = true
+  allow_forwarded_traffic      = true
+}
+${udrBlock}${firewallBlock}${bastionBlock}
+output "spoke_vnet_id" {
+  value = azurerm_virtual_network.spoke_vnet.id
+}
+
+output "aks_subnet_id" {
+  value = azurerm_subnet.aks_subnet.id
 }
 `;
 }

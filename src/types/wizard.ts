@@ -46,6 +46,28 @@ export interface WorkloadConfig {
 
 export type ApimSkuName = 'Developer' | 'BasicV2' | 'StandardV2' | 'PremiumV2';
 
+export interface HubSpokeConfig {
+  enableHubSpoke: boolean;
+  /** Link to an existing hub VNet ('existing') or create a new one ('new') */
+  hubMode: 'existing' | 'new';
+  /** Resource ID of the existing hub VNet (used when hubMode === 'existing') */
+  existingHubVnetId: string;
+  /** Address space for the hub VNet (used when hubMode === 'new') */
+  hubVnetCidr: string;
+  /** Address space for the AKS spoke VNet */
+  spokeVnetCidr: string;
+  /** Subnet CIDR for AKS nodes within the spoke VNet */
+  aksSubnetCidr: string;
+  /** Deploy Azure Firewall in the hub for centralised egress */
+  enableAzureFirewall: boolean;
+  /** Route AKS egress through the hub firewall (UDR) */
+  enableEgressViaFirewall: boolean;
+  /** Make the AKS API server private (no public endpoint) */
+  enablePrivateCluster: boolean;
+  /** Deploy a Bastion host in the hub for secure VM access */
+  enableBastion: boolean;
+}
+
 export interface MultiRegionConfig {
   enableMultiRegion: boolean;
   secondaryRegions: string[];
@@ -146,6 +168,9 @@ export interface WizardConfig {
 
   // Multi-Region
   multiRegion: MultiRegionConfig;
+
+  // Hub-Spoke
+  hubSpoke: HubSpokeConfig;
 }
 
 export const defaultConfig: WizardConfig = {
@@ -240,6 +265,19 @@ export const defaultConfig: WizardConfig = {
     apimSkuName: 'Developer',
     apimPublisherEmail: '',
   },
+
+  hubSpoke: {
+    enableHubSpoke: false,
+    hubMode: 'new',
+    existingHubVnetId: '',
+    hubVnetCidr: '10.0.0.0/16',
+    spokeVnetCidr: '10.1.0.0/16',
+    aksSubnetCidr: '10.1.0.0/22',
+    enableAzureFirewall: false,
+    enableEgressViaFirewall: false,
+    enablePrivateCluster: false,
+    enableBastion: false,
+  },
 };
 
 export const STEPS = [
@@ -254,6 +292,7 @@ export const STEPS = [
   { id: 'monitoring', label: 'Monitoring' },
   { id: 'addons', label: 'Add-ons' },
   { id: 'multiregion', label: 'Multi-Region' },
+  { id: 'hubspoke', label: 'Hub-Spoke' },
   { id: 'storage', label: 'Storage' },
   { id: 'review', label: 'Review' },
   { id: 'templates', label: 'Templates' },
