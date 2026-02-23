@@ -22,9 +22,9 @@ This manual provides a step-by-step walkthrough of every screen in the AKS-Wizar
 8. [Security & Identity](#step-8-security--identity)
 9. [Monitoring & Observability](#step-9-monitoring--observability)
 10. [Add-ons](#step-10-add-ons)
-11. [Multi-Region & High Availability](#step-11-multi-region--high-availability)
+11. [Hub-Spoke Networking](#step-11-hub-spoke-networking)
+12. [Multi-Region & High Availability](#step-12-multi-region--high-availability)
     - [Azure API Management (APIM)](#azure-api-management-apim)
-12. [Hub-Spoke Networking](#step-12-hub-spoke-networking)
 13. [Persistent Storage](#step-13-persistent-storage)
 14. [Review & Validate](#step-14-review--validate)
 15. [Generated Templates](#step-15-generated-templates)
@@ -756,7 +756,7 @@ Do you pull images from Azure Container Registry?
 
 ---
 
-## Step 11: Multi-Region & High Availability
+## Step 12: Multi-Region & High Availability
 
 ### Purpose
 
@@ -809,7 +809,7 @@ Flexible Server with read replicas for a fully resilient multi-region architectu
 
 ### Screenshot
 
-![Step 11 — Multi-Region & High Availability](screenshots/step-11-multiregion.png)
+![Step 12 — Multi-Region & High Availability](screenshots/step-11-multiregion.png)
 
 ### Fields & Impact
 
@@ -1284,18 +1284,20 @@ output "apim_gateway_url" {
 
 ---
 
-## Step 12: Hub-Spoke Networking
+## Step 11: Hub-Spoke Networking
 
 ### Purpose
 
-The Hub-Spoke Networking screen lets you deploy your AKS cluster into an enterprise-grade **hub-spoke topology**. A spoke VNet hosts the cluster, while a central hub VNet provides shared services — Azure Firewall for centralised egress control, Azure Bastion for secure VM access, and a common DNS boundary. This is the recommended networking pattern for Azure enterprise landing zones.
+The Hub-Spoke Networking screen lets you deploy your AKS cluster into an enterprise-grade **hub-spoke topology**. A spoke VNet hosts the cluster, while a central hub VNet provides shared services — Azure Firewall for centralised egress control, Azure Bastion for secure VM access, a VPN Gateway for hybrid connectivity, and a common DNS boundary via Private DNS Zones. This is the recommended networking pattern for Azure enterprise landing zones.
+
+Hub-Spoke is configured **before** Multi-Region so the networking foundation is established first. When both are enabled, each regional AKS cluster resides in its own spoke VNet, with Azure Front Door (Step 12) acting as the global entry point.
 
 ### What you see
 
 ```
 Hub-Spoke Networking
 Deploy your AKS cluster into a dedicated spoke VNet connected to a centralised hub VNet.
-The hub provides shared services such as Azure Firewall, Bastion, and DNS.
+The hub provides shared services such as Azure Firewall, Bastion, VPN Gateway, and DNS.
 
 ℹ️ Hub-Spoke Architecture
 A hub-spoke topology centralises network services in a hub VNet while keeping workloads
@@ -1335,6 +1337,9 @@ Hub Services
 
   🏰 Deploy Azure Bastion in Hub   ⓘ  [ OFF ]
 
+  🔌 Deploy VPN Gateway in Hub     ⓘ  [ OFF ]
+     Provisions a GatewaySubnet (/27) in the hub for VPN or ExpressRoute connectivity
+
   🔒 Private AKS Cluster           ⓘ  [ OFF ]
      No public API server endpoint — access via Bastion or a jump box in the hub
 
@@ -1346,35 +1351,36 @@ Enable the toggle above to adopt the recommended enterprise networking topology.
 ### Architecture Diagram
 
 ```
-                          ┌──────────────────────────────────────────────────────┐
-                          │             Hub VNet (10.0.0.0/16)                   │
-                          │                                                      │
-                          │  ┌──────────────────┐   ┌──────────────────────┐   │
-                          │  │  Azure Firewall   │   │   Azure Bastion      │   │
-                          │  │  (AzureFirewall   │   │   (AzureBastionSubnet│   │
-                          │  │   Subnet)         │   │    subnet)           │   │
-                          │  └──────────────────┘   └──────────────────────┘   │
-                          └─────────────────┬────────────────────────────────────┘
-                                            │ VNet Peering (bidirectional)
-                          ┌─────────────────▼────────────────────────────────────┐
-                          │             Spoke VNet (10.1.0.0/16)                 │
-                          │                                                      │
-                          │  ┌──────────────────────────────────────────────┐   │
-                          │  │  aks-subnet (10.1.0.0/22)                    │   │
-                          │  │                                              │   │
-                          │  │    ┌──────────────────────────────────┐     │   │
-                          │  │    │         AKS Cluster              │     │   │
-                          │  │    │    (nodes + pods + services)     │     │   │
-                          │  │    └──────────────────────────────────┘     │   │
-                          │  └──────────────────────────────────────────────┘   │
-                          └──────────────────────────────────────────────────────┘
+                          ┌─────────────────────────────────────────────────────┐
+                          │            Hub VNet (10.0.0.0/16)                   │
+                          │                                                     │
+                          │  ┌──────────────┐  ┌──────────────┐  ┌──────────┐  │
+                          │  │Azure Firewall│  │Azure Bastion │  │VPN Gateway│  │
+                          │  │(AzureFirewall│  │(AzureBastion │  │(Gateway   │  │
+                          │  │ Subnet /26)  │  │ Subnet /26)  │  │ Subnet/27)│  │
+                          │  └──────────────┘  └──────────────┘  └──────────┘  │
+                          └────────────────────┬────────────────────────────────┘
+                                               │ VNet Peering (bidirectional)
+                                               │ allowGatewayTransit / useRemoteGateways
+                          ┌────────────────────▼────────────────────────────────┐
+                          │             Spoke VNet (10.1.0.0/16)                │
+                          │                                                     │
+                          │  ┌──────────────────────────────────────────────┐  │
+                          │  │  aks-subnet (10.1.0.0/22)                    │  │
+                          │  │                                              │  │
+                          │  │    ┌──────────────────────────────────┐     │  │
+                          │  │    │         AKS Cluster              │     │  │
+                          │  │    │    (nodes + pods + services)     │     │  │
+                          │  │    └──────────────────────────────────┘     │  │
+                          │  └──────────────────────────────────────────────┘  │
+                          └─────────────────────────────────────────────────────┘
 ```
 
 ### Screenshot
 
-![Step 12 — Hub-Spoke Networking (disabled)](screenshots/step-12-hubspoke.png)
+![Step 11 — Hub-Spoke Networking (disabled)](screenshots/step-12-hubspoke.png)
 
-![Step 12 — Hub-Spoke Networking (enabled)](screenshots/step-12-hubspoke-enabled.png)
+![Step 11 — Hub-Spoke Networking (enabled)](screenshots/step-12-hubspoke-enabled.png)
 
 ### Fields & Impact
 
@@ -1382,7 +1388,7 @@ Enable the toggle above to adopt the recommended enterprise networking topology.
 
 | Field | Default | Description | Impact |
 |-------|---------|-------------|--------|
-| **Enable Hub-Spoke Topology** | ❌ OFF | Deploys the AKS cluster into a spoke VNet peered to a central hub VNet containing shared services. | When enabled, the wizard generates spoke VNet, hub VNet (if creating new), VNet peering, and optional hub service resources (Azure Firewall, Bastion) in the Bicep and Terraform templates. When disabled, the cluster is deployed without an explicit hub. |
+| **Enable Hub-Spoke Topology** | ❌ OFF | Deploys the AKS cluster into a spoke VNet peered to a central hub VNet containing shared services. | When enabled, the wizard generates spoke VNet, hub VNet (if creating new), VNet peering, and optional hub service resources (Azure Firewall, Bastion, VPN Gateway, Private DNS Zone) in the Bicep and Terraform templates. When disabled, the cluster is deployed without an explicit hub. |
 
 #### Hub VNet
 
@@ -1403,14 +1409,15 @@ Enable the toggle above to adopt the recommended enterprise networking topology.
 
 | Field | Default | Description | Impact |
 |-------|---------|-------------|--------|
-| **Deploy Azure Firewall in Hub** / **Hub has Azure Firewall** | ❌ OFF | When creating a new hub, provisions Azure Firewall Premium in a dedicated `AzureFirewallSubnet`. When using an existing hub, indicates the hub already contains an Azure Firewall. | Enables centralised egress filtering using FQDN rules and threat intelligence. Required if you also enable **Route AKS Egress Through Firewall**. |
+| **Deploy Azure Firewall in Hub** / **Hub has Azure Firewall** | ❌ OFF | When creating a new hub, provisions Azure Firewall Premium in a dedicated `AzureFirewallSubnet` (/26). When using an existing hub, indicates the hub already contains an Azure Firewall. | Enables centralised egress filtering using FQDN rules and threat intelligence. Required if you also enable **Route AKS Egress Through Firewall**. |
 | **Route AKS Egress Through Firewall** | ❌ OFF | Adds a User-Defined Route (UDR) table to the AKS node subnet that sends all outbound traffic (`0.0.0.0/0`) through the hub firewall. Only visible when Azure Firewall is enabled. | All AKS egress is inspected by Azure Firewall before leaving Azure. You must configure the required AKS [outbound FQDN rules](https://learn.microsoft.com/azure/aks/outbound-rules-control-egress) in your firewall policy — without them, cluster operations such as pulling images and calling the Kubernetes API will fail. |
-| **Deploy Azure Bastion in Hub** / **Hub has Azure Bastion** | ❌ OFF | When creating a new hub, provisions Azure Bastion in a dedicated `AzureBastionSubnet`. When using an existing hub, indicates the hub already contains a Bastion. | Enables browser-based SSH/RDP access to VMs inside the hub or spoke VNets without exposing public IP addresses. Especially useful when the AKS cluster uses a private API server. |
-| **Private AKS Cluster** | ❌ OFF | Configures the Kubernetes API server with a private endpoint inside the VNet — no public-facing endpoint is created. | Prevents exposure of the Kubernetes API server to the public internet. `kubectl` and CI/CD pipelines must be run from within the VNet or via a VPN/ExpressRoute/Azure Bastion jump box. A warning is shown if Private Cluster is enabled without Bastion. |
+| **Deploy Azure Bastion in Hub** / **Hub has Azure Bastion** | ❌ OFF | When creating a new hub, provisions Azure Bastion in a dedicated `AzureBastionSubnet` (/26). When using an existing hub, indicates the hub already contains a Bastion. | Enables browser-based SSH/RDP access to VMs inside the hub or spoke VNets without exposing public IP addresses. Especially useful when the AKS cluster uses a private API server. |
+| **Deploy VPN Gateway in Hub** / **Hub has VPN / ExpressRoute Gateway** | ❌ OFF | When creating a new hub, provisions a `GatewaySubnet` (/27) and a VPN Gateway (VpnGw1, RouteBased) in the hub. VNet peerings are automatically configured with `allowGatewayTransit` on the hub side and `useRemoteGateways` on the spoke side so spoke workloads can reach on-premises networks through the hub gateway. | Enables hybrid connectivity between on-premises networks and all spokes via the hub. Replace the VPN Gateway with an ExpressRoute Gateway after deployment for dedicated, private connectivity. |
+| **Private AKS Cluster** | ❌ OFF | Configures the Kubernetes API server with a private endpoint inside the VNet — no public-facing endpoint is created. Generates an Azure Private DNS Zone (`privatelink.<region>.azmk8s.io`) linked to both hub and spoke VNets. | Prevents exposure of the Kubernetes API server to the public internet. `kubectl` and CI/CD pipelines must be run from within the VNet or via a VPN/ExpressRoute/Azure Bastion jump box. A warning is shown if Private Cluster is enabled without Bastion. |
 
 ### Step-by-Step: Configuring Hub-Spoke with a New Hub
 
-1. Navigate to **Step 12: Hub-Spoke Networking**.
+1. Navigate to **Step 11: Hub-Spoke Networking**.
 2. Toggle **Enable Hub-Spoke Topology** to **ON**.
 3. Under **Hub VNet**, select **🆕 Create New Hub**.
 4. Set the **Hub VNet Address Space** (default `10.0.0.0/16`). Ensure it does not overlap with the spoke or any on-premises ranges.
@@ -1418,20 +1425,21 @@ Enable the toggle above to adopt the recommended enterprise networking topology.
 6. Under **Hub Services**, enable **Deploy Azure Firewall in Hub** if you want centralised outbound filtering.
    - If Azure Firewall is enabled, optionally enable **Route AKS Egress Through Firewall** to force all AKS outbound traffic through the firewall. Remember to configure AKS FQDN rules in your firewall policy after deployment.
 7. Enable **Deploy Azure Bastion in Hub** for secure access to nodes without public IPs.
-8. Enable **Private AKS Cluster** to hide the Kubernetes API server from the public internet.
-9. Click **Next →** to proceed to the Persistent Storage step.
-10. The generated Bicep and Terraform templates will include hub VNet, spoke VNet, peering, and all selected hub service resources.
+8. Enable **Deploy VPN Gateway in Hub** if you need site-to-site or point-to-site connectivity to on-premises networks. The wizard provisions a `GatewaySubnet` (/27) and a VPN Gateway; VNet peering is configured with gateway transit automatically.
+9. Enable **Private AKS Cluster** to hide the Kubernetes API server from the public internet. A Private DNS Zone is generated and linked to both hub and spoke VNets.
+10. Click **Next →** to proceed to the Multi-Region step.
+11. The generated Bicep and Terraform templates will include hub VNet, spoke VNet, peering, and all selected hub service resources.
 
 ### Step-by-Step: Connecting to an Existing Hub
 
-1. Navigate to **Step 12: Hub-Spoke Networking**.
+1. Navigate to **Step 11: Hub-Spoke Networking**.
 2. Toggle **Enable Hub-Spoke Topology** to **ON**.
 3. Under **Hub VNet**, select **🔗 Use Existing Hub**.
 4. Paste the full **resource ID** of your existing hub VNet into the **Existing Hub VNet Resource ID** field.
    - Example: `/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/hub-rg/providers/Microsoft.Network/virtualNetworks/hub-vnet`
    - You can find this in the Azure portal under **Virtual Networks → {your-hub-vnet} → Properties → Resource ID**.
 5. Configure the **Spoke VNet** address spaces.
-6. Under **Hub Services**, toggle the checkboxes that reflect what is already provisioned in your hub (Azure Firewall, Bastion).
+6. Under **Hub Services**, toggle the checkboxes that reflect what is already provisioned in your hub (Azure Firewall, Bastion, VPN/ExpressRoute Gateway).
 7. Proceed to the Templates step. The generated IaC will reference your existing hub VNet resource ID for the peering.
 
 ### Generated Templates
@@ -1479,6 +1487,7 @@ resource hubToSpokePeering 'Microsoft.Network/virtualNetworks/virtualNetworkPeer
     remoteVirtualNetwork: { id: spokeVnet.id }
     allowVirtualNetworkAccess: true
     allowForwardedTraffic: true
+    allowGatewayTransit: false  // set to true when VPN Gateway is enabled
   }
 }
 ```
@@ -1514,6 +1523,7 @@ resource "azurerm_virtual_network_peering" "hub_to_spoke" {
   remote_virtual_network_id = azurerm_virtual_network.spoke_vnet.id
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
+  allow_gateway_transit        = false  # set to true when VPN Gateway is enabled
 }
 ```
 
@@ -1523,9 +1533,13 @@ resource "azurerm_virtual_network_peering" "hub_to_spoke" {
 
 > **Private cluster access:** With a private API server and no Azure Bastion, you will need a jump box, VPN Gateway, or ExpressRoute connection inside the hub VNet to run `kubectl` commands. Azure Bastion or a hub-resident jump box VM is the recommended solution.
 
-> **CIDR planning:** Plan IP address spaces carefully before deployment. Changes to VNet address spaces after deployment require resource recreation. For large clusters, use `/14` or `/15` spokes rather than `/16` to accommodate future growth.
+> **VPN Gateway transit:** When VPN Gateway is enabled, the hub-to-spoke peering sets `allowGatewayTransit: true` and the spoke-to-hub peering sets `useRemoteGateways: true`. This lets workloads in the spoke reach on-premises networks through the hub gateway without requiring a gateway in every spoke.
 
-> **DNS resolution:** In a hub-spoke topology, configure [Azure Private DNS Zones](https://learn.microsoft.com/azure/private-link/private-endpoint-dns) in the hub and link them to both the hub and spoke VNets for private endpoint resolution.
+> **CIDR planning:** Plan IP address spaces carefully before deployment. Changes to VNet address spaces after deployment require resource recreation. For large clusters, use `/14` or `/15` spokes rather than `/16` to accommodate future growth. The hub VNet must be large enough to hold all subnets: `AzureFirewallSubnet` (/26), `AzureBastionSubnet` (/26), and `GatewaySubnet` (/27).
+
+> **Private DNS Zone:** When Private Cluster is enabled, the wizard generates a `privatelink.<region>.azmk8s.io` Private DNS Zone linked to both hub and spoke VNets. This ensures the private Kubernetes API endpoint is resolvable from the hub (for jump boxes, Bastion) and from the spoke (for nodes and pods).
+
+> **Multi-Region + Hub-Spoke:** For multi-region deployments, each regional AKS cluster should reside in its own spoke VNet. Use non-overlapping CIDR ranges for each region's spoke (e.g., primary `10.1.0.0/16`, secondary `10.2.0.0/16`). Azure Front Door (Step 12) is the recommended global entry point that routes traffic across all regional clusters.
 
 ### Official References
 
@@ -1535,7 +1549,8 @@ resource "azurerm_virtual_network_peering" "hub_to_spoke" {
 - [AKS outbound FQDN rules](https://learn.microsoft.com/azure/aks/outbound-rules-control-egress)
 - [Private AKS cluster](https://learn.microsoft.com/azure/aks/private-cluster)
 - [Azure Bastion overview](https://learn.microsoft.com/azure/bastion/bastion-overview)
-- [VNet peering](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview)
+- [VPN Gateway overview](https://learn.microsoft.com/azure/vpn-gateway/vpn-gateway-about-vpngateways)
+- [VNet peering and gateway transit](https://learn.microsoft.com/azure/vpn-gateway/vpn-gateway-peering-gateway-transit)
 - [User-Defined Routes (UDR)](https://learn.microsoft.com/azure/virtual-network/virtual-networks-udr-overview)
 - [Azure Private DNS Zones with AKS](https://learn.microsoft.com/azure/aks/private-cluster#options-for-connecting-to-the-private-cluster)
 - [Azure landing zone hub-spoke topology](https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/hub-spoke-network-topology)
@@ -2163,6 +2178,7 @@ The table below summarises every configurable field in the wizard, its default v
 | `hubSpoke.enableEgressViaFirewall` | `false` | Hub-Spoke Networking |
 | `hubSpoke.enableBastion` | `false` | Hub-Spoke Networking |
 | `hubSpoke.enablePrivateCluster` | `false` | Hub-Spoke Networking |
+| `hubSpoke.enableVpnGateway` | `false` | Hub-Spoke Networking |
 
 ---
 

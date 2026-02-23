@@ -404,10 +404,12 @@ function generateHubSpokeBicep(cfg: import('../types/wizard').WizardConfig): str
     return `${parts.join('.')}/${prefixLen}`;
   }
 
-  // AzureFirewallSubnet requires /26 minimum; AzureBastionSubnet requires /26 minimum.
-  // We carve them at offset 0 (/26) and offset 64 (/26) respectively so they never overlap.
+  // AzureFirewallSubnet requires /26 minimum; AzureBastionSubnet requires /26 minimum;
+  // GatewaySubnet requires /27 minimum.
+  // We carve them at offset 0 (/26), offset 64 (/26), and offset 128 (/27) respectively.
   const fwSubnetCidr = carveSubnet(hs.hubVnetCidr, 0, 26);
   const bastionSubnetCidr = carveSubnet(hs.hubVnetCidr, 64, 26);
+  const gatewaySubnetCidr = carveSubnet(hs.hubVnetCidr, 128, 27);
 
   const hubVnetBlock = hs.hubMode === 'new'
     ? `
@@ -430,6 +432,12 @@ resource hubVnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
         name: 'AzureBastionSubnet'
         properties: {
           addressPrefix: '${bastionSubnetCidr}'
+        }
+      }` : ''}${hs.enableVpnGateway ? `
+      {
+        name: 'GatewaySubnet'
+        properties: {
+          addressPrefix: '${gatewaySubnetCidr}'
         }
       }` : ''}
     ]
@@ -561,6 +569,91 @@ resource aksRouteTable 'Microsoft.Network/routeTables@2023-05-01' = {
 `
     : '';
 
+  const vpnGatewayBlock = hs.hubMode === 'new' && hs.enableVpnGateway
+    ? `
+// ─── VPN Gateway ──────────────────────────────────────────────────────────────
+resource vpnGatewayPublicIp 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
+  name: '${clusterBase}-vpngw-pip'
+  location: location
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+  tags: {
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+
+resource vpnGateway 'Microsoft.Network/virtualNetworkGateways@2023-05-01' = {
+  name: '${clusterBase}-hub-vpngw'
+  location: location
+  properties: {
+    gatewayType: 'Vpn'
+    vpnType: 'RouteBased'
+    sku: {
+      name: 'VpnGw1'
+      tier: 'VpnGw1'
+    }
+    ipConfigurations: [
+      {
+        name: 'ipconfig'
+        properties: {
+          subnet: {
+            id: resourceId('Microsoft.Network/virtualNetworks/subnets', hubVnet.name, 'GatewaySubnet')
+          }
+          publicIPAddress: {
+            id: vpnGatewayPublicIp.id
+          }
+        }
+      }
+    ]
+  }
+  tags: {
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+`
+    : '';
+
+  const privateDnsBlock = hs.enablePrivateCluster
+    ? `
+// ─── Private DNS Zone (for private AKS API server) ───────────────────────────
+resource privateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+  name: 'privatelink.${cfg.region}.azmk8s.io'
+  location: 'global'
+  tags: {
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+
+resource privateDnsZoneHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+  parent: privateDnsZone
+  name: 'hub-vnet-link'
+  location: 'global'
+  properties: {
+    virtualNetwork: {
+      id: ${hs.hubMode === 'new' ? 'hubVnet.id' : 'hubVnetId'}
+    }
+    registrationEnabled: false
+  }
+}
+
+resource privateDnsZoneSpokeLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+  parent: privateDnsZone
+  name: 'spoke-vnet-link'
+  location: 'global'
+  properties: {
+    virtualNetwork: {
+      id: spokeVnet.id
+    }
+    registrationEnabled: false
+  }
+}
+`
+    : '';
+
   const hubVnetRef = hs.hubMode === 'new' ? 'hubVnet.id' : 'hubVnetId';
 
   return `
@@ -604,7 +697,7 @@ resource hubToSpokePeering 'Microsoft.Network/virtualNetworks/virtualNetworkPeer
     }
     allowVirtualNetworkAccess: true
     allowForwardedTraffic: true
-    allowGatewayTransit: false
+    allowGatewayTransit: ${hs.enableVpnGateway ? 'true' : 'false'}
   }
 }
 
@@ -616,10 +709,10 @@ resource spokeToHubPeering 'Microsoft.Network/virtualNetworks/virtualNetworkPeer
     }
     allowVirtualNetworkAccess: true
     allowForwardedTraffic: true
-    useRemoteGateways: false
+    useRemoteGateways: ${hs.enableVpnGateway ? 'true' : 'false'}
   }
 }
-${udrBlock}${firewallBlock}${bastionBlock}
+${udrBlock}${firewallBlock}${bastionBlock}${vpnGatewayBlock}${privateDnsBlock}
 output spokeVnetId string = spokeVnet.id
 output aksSubnetId string = resourceId('Microsoft.Network/virtualNetworks/subnets', spokeVnet.name, 'aks-subnet')
 `;

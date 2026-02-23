@@ -32,7 +32,7 @@ const AZURE_REGIONS = [
 
 export function MultiRegion() {
   const { config, updateConfig } = useWizard();
-  const { multiRegion } = config;
+  const { multiRegion, hubSpoke } = config;
 
   const update = (partial: Partial<typeof multiRegion>) =>
     updateConfig({ multiRegion: { ...multiRegion, ...partial } });
@@ -60,6 +60,16 @@ export function MultiRegion() {
         to the nearest healthy region. If one region fails, Front Door automatically redirects
         requests to the next available endpoint within seconds.
       </InfoBox>
+
+      {hubSpoke.enableHubSpoke && (
+        <InfoBox variant="tip" title="Hub-Spoke + Multi-Region">
+          Hub-Spoke networking is enabled. Each regional AKS cluster should reside in its own spoke
+          VNet peered to a regional hub. Azure Front Door (below) is the recommended global entry
+          point that routes traffic across all regional spokes — this is the Microsoft-recommended
+          pattern for enterprise multi-region AKS deployments. Ensure each region's spoke VNet uses
+          a non-overlapping CIDR range.
+        </InfoBox>
+      )}
 
       {/* Enable Multi-Region */}
       <div className="card mb-4">
