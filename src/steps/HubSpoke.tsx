@@ -272,39 +272,39 @@ export function HubSpoke() {
             </div>
 
             {/* VPN Gateway */}
-            <div
-              className="flex items-center justify-between py-3 border-b"
-              style={{ borderColor: 'var(--border)' }}
-            >
-              <div className="flex items-start gap-3">
-                <span className="text-xl">🔌</span>
-                <div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {hubSpoke.hubMode === 'existing' ? 'Hub has VPN / ExpressRoute Gateway' : 'Deploy VPN Gateway in Hub'}
-                    </span>
-                    <Tooltip content="A VPN or ExpressRoute Gateway in the hub provides secure hybrid connectivity between your on-premises network and the Azure hub-spoke topology. Requires a dedicated GatewaySubnet (/27 or larger) in the hub VNet.">
-                      <span className="text-xs cursor-help" style={{ color: 'var(--info)' }}>ⓘ</span>
-                    </Tooltip>
-                  </div>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                    {hubSpoke.hubMode === 'new'
-                      ? 'Provisions a GatewaySubnet (/27) in the hub for VPN or ExpressRoute connectivity'
-                      : 'Indicates a VPN or ExpressRoute Gateway is already present in the existing hub'}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => update({ enableVpnGateway: !hubSpoke.enableVpnGateway })}
-                className="relative inline-flex h-6 w-11 rounded-full transition-colors flex-shrink-0"
-                style={{ background: hubSpoke.enableVpnGateway ? 'var(--success)' : 'var(--border)' }}
+            {hubSpoke.hubMode === 'new' && (
+              <div
+                className="flex items-center justify-between py-3 border-b"
+                style={{ borderColor: 'var(--border)' }}
               >
-                <span
-                  className="inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform mt-0.5 ml-0.5"
-                  style={{ transform: hubSpoke.enableVpnGateway ? 'translateX(20px)' : 'translateX(0)' }}
-                />
-              </button>
-            </div>
+                <div className="flex items-start gap-3">
+                  <span className="text-xl">🔌</span>
+                  <div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                        Deploy VPN Gateway in Hub
+                      </span>
+                      <Tooltip content="A VPN or ExpressRoute Gateway in the hub provides secure hybrid connectivity between your on-premises network and the Azure hub-spoke topology. Requires a dedicated GatewaySubnet (/27 or larger) in the hub VNet.">
+                        <span className="text-xs cursor-help" style={{ color: 'var(--info)' }}>ⓘ</span>
+                      </Tooltip>
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      Provisions a GatewaySubnet (/27) in the hub for VPN or ExpressRoute connectivity
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => update({ enableVpnGateway: !hubSpoke.enableVpnGateway })}
+                  className="relative inline-flex h-6 w-11 rounded-full transition-colors flex-shrink-0"
+                  style={{ background: hubSpoke.enableVpnGateway ? 'var(--success)' : 'var(--border)' }}
+                >
+                  <span
+                    className="inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform mt-0.5 ml-0.5"
+                    style={{ transform: hubSpoke.enableVpnGateway ? 'translateX(20px)' : 'translateX(0)' }}
+                  />
+                </button>
+              </div>
+            )}
 
             {/* Private Cluster */}
             <div className="flex items-center justify-between py-3">
@@ -351,6 +351,15 @@ export function HubSpoke() {
               <code>privatelink.{config.region}.azmk8s.io</code>) for API server name resolution.
               The wizard generates this zone and links it to both the hub and spoke VNets so that
               nodes and any jump box can resolve the private API server endpoint.
+            </InfoBox>
+          )}
+
+          {hubSpoke.enablePrivateCluster && multiRegion.enableMultiRegion && multiRegion.enableFrontDoor && multiRegion.frontDoorSkuName === 'Standard_AzureFrontDoor' && (
+            <InfoBox variant="warning" title="Private cluster + Azure Front Door requires Premium SKU">
+              A private AKS cluster exposes its ingress only via private IPs. Azure Front Door must use{' '}
+              <strong>Private Link origins</strong> to reach private backends, which requires the{' '}
+              <strong>Premium SKU</strong>. Switch to Premium in the Multi-Region step to enable Private
+              Link origin support.
             </InfoBox>
           )}
 

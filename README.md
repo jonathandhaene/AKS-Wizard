@@ -17,7 +17,7 @@ A browser-based wizard that guides you step-by-step through configuring an Azure
 - **Auto-upgrade channel selector** – Configure `none`, `patch`, `stable`, `rapid`, or `node-image` upgrade strategies
 - **Azure Container Registry integration** – Attach an ACR to your cluster with a single toggle; role assignment generated automatically
 - **Multi-Region & High Availability** – Deploy AKS clusters across multiple Azure regions with Azure Front Door for zero-downtime failover
-- **Hub-Spoke Networking** – Deploy into an enterprise hub-spoke topology with a dedicated spoke VNet, VNet peering, optional Azure Firewall egress filtering, Azure Bastion, VPN Gateway for hybrid connectivity, Private DNS Zone for private clusters, and private cluster support
+- **Hub-Spoke Networking** – Deploy into an enterprise hub-spoke topology with a dedicated spoke VNet, VNet peering, optional Azure Firewall egress filtering, Azure Bastion, VPN Gateway for hybrid connectivity (with GatewaySubnet), Private DNS Zone for private clusters, and private cluster support. AKS nodes are automatically placed in the spoke subnet when hub-spoke is enabled.
 - **Template generation** – Bicep, Terraform, and GitHub Actions CI/CD workflows generated from your choices
 - **GitHub Actions workflow** – Uses `azure/k8s-bake@v3` to render Helm charts and `azure/k8s-deploy@v5` to deploy; includes an AKS upgrade-check job
 - **PowerShell deployment script** – The Deploy step generates a ready-to-run `deploy-aks.ps1` script (no browser-based deployment)
@@ -205,7 +205,7 @@ The **Hub-Spoke Networking** step (Step 11) deploys your AKS cluster into an ent
 | **Centralised security** | Azure Firewall in the hub inspects and filters all outbound traffic from the spoke using FQDN rules and threat intelligence. |
 | **Workload isolation** | Each application or environment gets its own spoke VNet. The hub enforces shared policy without allowing spoke-to-spoke traffic by default. |
 | **Secure access** | Azure Bastion in the hub provides browser-based SSH/RDP to nodes without exposing public IPs. Combine with a private cluster to remove the public Kubernetes API endpoint entirely. |
-| **Hybrid connectivity** | A VPN Gateway (GatewaySubnet) in the hub enables secure site-to-site or point-to-site connectivity between on-premises networks and all spokes via the hub. |
+| **Hybrid connectivity** | A VPN Gateway (GatewaySubnet) in the hub enables secure site-to-site or point-to-site connectivity between on-premises networks and all spokes via the hub. With gateway transit enabled on VNet peerings, all spoke VNets reach on-premises without their own gateways. |
 | **Private DNS** | When Private Cluster is enabled, the wizard generates an Azure Private DNS Zone (`privatelink.<region>.azmk8s.io`) and links it to both hub and spoke VNets so the API server is resolvable from any connected network. |
 | **Enterprise-ready** | Aligns with the [Azure landing zone accelerator](https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/hub-spoke-network-topology) and AKS baseline reference architecture. |
 
@@ -215,7 +215,7 @@ Enable **Hub-Spoke Topology** on Step 11 and choose whether to create a new hub 
 
 | Hub Mode | When to use |
 |----------|-------------|
-| **🆕 Create New Hub** | You do not have an existing hub VNet. The wizard generates hub VNet, spoke VNet, peering, and optional hub service resources. |
+| **🆕 Create New Hub** | You do not have an existing hub VNet. The wizard generates hub VNet, spoke VNet, peering, and optional hub service resources (Azure Firewall, Bastion, VPN Gateway). |
 | **🔗 Use Existing Hub** | You already operate a hub VNet. Provide the full resource ID; the wizard generates only spoke VNet and peering resources. |
 
 ### Hub Services
@@ -225,9 +225,20 @@ When creating a new hub VNet, you can optionally enable the following shared ser
 | Service | Description | Subnet |
 |---------|-------------|--------|
 | **Azure Firewall** | Centralised FQDN-based egress filtering for all spokes. Enable "Route AKS Egress Through Firewall" to add a UDR on the AKS subnet. | `AzureFirewallSubnet` (/26) |
-| **Azure Bastion** | Browser-based secure SSH/RDP to VMs without public IPs. | `AzureBastionSubnet` (/26) |
-| **VPN Gateway** | Site-to-site or point-to-site connectivity to on-premises networks. Gateway transit enables spokes to use the hub gateway. | `GatewaySubnet` (/27) |
+| **Azure Bastion** | Browser-based secure SSH/RDP to VMs without public IPs. Recommended with Private AKS Cluster. | `AzureBastionSubnet` (/26) |
+| **VPN Gateway** | Zone-redundant VPN Gateway (VpnGw2AZ) for site-to-site or point-to-site connectivity. Enables gateway transit so spoke VNets reach on-premises without their own gateways. | `GatewaySubnet` (/27) |
 | **Private AKS Cluster** | Removes the public Kubernetes API endpoint; generates a Private DNS Zone linked to hub and spoke VNets for name resolution. | — |
+
+### AKS Cluster Integration
+
+When hub-spoke is enabled, the wizard automatically:
+- Places AKS nodes in the **spoke subnet** (`vnetSubnetID` in Bicep, `vnet_subnet_id` in Terraform)
+- Configures a **private API server endpoint** if **Private Cluster** is enabled, with a Private DNS Zone linked to both hub and spoke VNets
+- Enables **gateway transit** on VNet peerings when a VPN Gateway is deployed
+
+### Private Cluster + Azure Front Door
+
+When using a **private AKS cluster** with **Azure Front Door** (configured in the Multi-Region step), Azure Front Door must reach the cluster's ingress via **Private Link origins**. This requires the **Premium SKU** for Azure Front Door. The wizard warns you about this combination in the Hub-Spoke step.
 
 ### Multi-Region + Hub-Spoke
 
@@ -356,9 +367,9 @@ For a fully resilient architecture, also configure:
 5. Under **Hub Services**, configure optional components:
    - Enable **Azure Firewall** for centralised egress filtering. If the cluster will route egress through the firewall, also enable **Route AKS Egress Through Firewall** and remember to configure [AKS FQDN outbound rules](https://learn.microsoft.com/azure/aks/outbound-rules-control-egress) in your firewall policy after deployment.
    - Enable **Azure Bastion** for secure browser-based SSH/RDP access without public IPs.
-   - Enable **VPN Gateway** to add a `GatewaySubnet` (/27) and a VPN Gateway resource in the hub for hybrid/on-premises connectivity. VNet peerings are configured with `allowGatewayTransit` (hub) and `useRemoteGateways` (spoke) automatically.
+   - Enable **VPN Gateway** to provision a zone-redundant `VpnGw2AZ` gateway and `GatewaySubnet` (/27) in the hub for site-to-site VPN or ExpressRoute connectivity. VNet peerings are configured with `allowGatewayTransit` (hub) and `useRemoteGateways` (spoke) automatically.
    - Enable **Private AKS Cluster** to remove the public Kubernetes API endpoint. A Private DNS Zone (`privatelink.<region>.azmk8s.io`) is generated and linked to both hub and spoke VNets.
-6. Proceed to **Templates** — the wizard appends spoke VNet, hub VNet (if new), peering, UDR, Firewall, Bastion, VPN Gateway, and Private DNS resources to the generated Bicep and Terraform templates.
+6. Proceed to **Templates** — the wizard appends spoke VNet, hub VNet (if new), peering, UDR, Firewall, Bastion, VPN Gateway, and Private DNS resources to the generated Bicep and Terraform templates. AKS nodes are automatically placed in the spoke subnet.
 
 ### How do I migrate from AKS Standard to AKS Automatic?
 
@@ -440,7 +451,7 @@ src/
   steps/        – One component per wizard step
     MaturityAssessment.tsx  – Team readiness questionnaire
     MultiRegion.tsx         – Multi-region deployment, Azure Front Door, WAF, health probes
-    HubSpoke.tsx            – Hub-spoke topology: spoke VNet, hub VNet, peering, Firewall, Bastion
+    HubSpoke.tsx            – Hub-spoke topology: spoke VNet, hub VNet, peering, Firewall, Bastion, VPN Gateway
     Pods.tsx                – Pod resource limits, affinity rules, and networking
   types/        – TypeScript types (WizardConfig, AksMode, AutoUpgradeChannel, MultiRegionConfig, …)
   utils/        – Template generators (Bicep, Terraform, PowerShell, GitHub Actions workflow)

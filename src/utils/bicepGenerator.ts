@@ -82,6 +82,29 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
     ? `\n@description('Azure AD tenant ID')\nparam tenantId string = '${cfg.azureAdTenantId}'`
     : '';
 
+  // Hub-spoke integration: AKS nodes placed in the spoke subnet
+  const spokeSubnetVnetId = cfg.hubSpoke.enableHubSpoke
+    ? `\n      vnetSubnetID: resourceId('Microsoft.Network/virtualNetworks/subnets', spokeVnet.name, 'aks-subnet')`
+    : '';
+
+  // Private cluster configuration
+  const privateClusterBlock = cfg.hubSpoke.enableHubSpoke && cfg.hubSpoke.enablePrivateCluster
+    ? `
+    apiServerAccessProfile: {
+      enablePrivateCluster: true
+    }`
+    : '';
+
+  // Hub-spoke VNets block placed BEFORE the AKS cluster so Bicep can resolve the symbolic dependency
+  const hubSpokeVNetsBlock = cfg.hubSpoke.enableHubSpoke
+    ? generateHubSpokeVNetsBicep(cfg)
+    : '';
+
+  // Hub-spoke services block (peerings, firewall, bastion, UDR) placed AFTER the AKS cluster
+  const hubSpokeServicesBlock = cfg.hubSpoke.enableHubSpoke
+    ? generateHubSpokeServicesBicep(cfg)
+    : '';
+
   return `@description('The name of the AKS cluster')
 param clusterName string = '${cfg.clusterName}'
 
@@ -96,7 +119,7 @@ param kubernetesVersion string = '${cfg.kubernetesVersion}'
 
 @description('VM size for system node pool')
 param systemNodeVmSize string = '${cfg.systemNodePool.vmSize}'${tenantIdParam}
-${workspaceResource}
+${hubSpokeVNetsBlock}${workspaceResource}
 resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-01-01' = {
   name: clusterName
   location: location
@@ -106,14 +129,14 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-01-01' = {
   properties: {
     kubernetesVersion: kubernetesVersion
     dnsPrefix: dnsPrefix
-    enableRBAC: ${cfg.enableRbac}${autoUpgrade}${aadProfile}
+    enableRBAC: ${cfg.enableRbac}${autoUpgrade}${aadProfile}${privateClusterBlock}
     agentPoolProfiles: [
       {
         name: '${cfg.systemNodePool.name}'
         mode: 'System'
         vmSize: systemNodeVmSize${agentPoolAutoScale}
         osType: 'Linux'
-        type: 'VirtualMachineScaleSets'
+        type: 'VirtualMachineScaleSets'${spokeSubnetVnetId}
       }${cfg.userNodePools
         .map(
           (pool) => `
@@ -131,7 +154,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-01-01' = {
         count: ${pool.nodeCount}`
   }
         osType: 'Linux'
-        type: 'VirtualMachineScaleSets'
+        type: 'VirtualMachineScaleSets'${spokeSubnetVnetId}
       }`,
         )
         .join('')}
@@ -162,7 +185,7 @@ resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     principalType: 'ServicePrincipal'
   }
 }
-` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorBicep(cfg) : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableApim ? generateApimBicep(cfg) : ''}${cfg.hubSpoke.enableHubSpoke ? generateHubSpokeBicep(cfg) : ''}`;
+` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorBicep(cfg) : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableApim ? generateApimBicep(cfg) : ''}${hubSpokeServicesBlock}`;
 
 }
 
@@ -390,19 +413,24 @@ output apimPortalUrl string = apimService.properties.developerPortalUrl
 `;
 }
 
-function generateHubSpokeBicep(cfg: import('../types/wizard').WizardConfig): string {
+// ─── Hub-Spoke helpers ────────────────────────────────────────────────────────
+
+function carveSubnet(baseCidr: string, offset: number, prefixLen: number): string {
+  const [ip] = baseCidr.split('/');
+  const parts = ip.split('.').map(Number);
+  parts[3] += offset;
+  if (parts[3] >= 256) { parts[2] += Math.floor(parts[3] / 256); parts[3] %= 256; }
+  return `${parts.join('.')}/${prefixLen}`;
+}
+
+/**
+ * Generates the hub VNet + spoke VNet Bicep resources.
+ * These MUST be declared before the AKS cluster resource so that Bicep can
+ * resolve the symbolic reference `spokeVnet.name` used in the AKS agentPoolProfiles.
+ */
+function generateHubSpokeVNetsBicep(cfg: import('../types/wizard').WizardConfig): string {
   const hs = cfg.hubSpoke;
   const clusterBase = cfg.clusterName || 'aks';
-
-  // Carve a subnet by offsetting the last two octets of the base IP.
-  // offset is added to the 4th octet (with carry into the 3rd).
-  function carveSubnet(baseCidr: string, offset: number, prefixLen: number): string {
-    const [ip] = baseCidr.split('/');
-    const parts = ip.split('.').map(Number);
-    parts[3] += offset;
-    if (parts[3] >= 256) { parts[2] += Math.floor(parts[3] / 256); parts[3] %= 256; }
-    return `${parts.join('.')}/${prefixLen}`;
-  }
 
   // AzureFirewallSubnet requires /26 minimum; AzureBastionSubnet requires /26 minimum;
   // GatewaySubnet requires /27 minimum.
@@ -413,6 +441,10 @@ function generateHubSpokeBicep(cfg: import('../types/wizard').WizardConfig): str
 
   const hubVnetBlock = hs.hubMode === 'new'
     ? `
+// ═══════════════════════════════════════════════════════════════════════════════
+// Hub-Spoke Networking
+// ═══════════════════════════════════════════════════════════════════════════════
+
 // ─── Hub VNet ─────────────────────────────────────────────────────────────────
 resource hubVnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
   name: '${clusterBase}-hub-vnet'
@@ -449,9 +481,64 @@ resource hubVnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
   }
 }
 `
-    : `// Hub VNet is an existing resource — reference it by resource ID
+    : `// ═══════════════════════════════════════════════════════════════════════════════
+// Hub-Spoke Networking
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Hub VNet is an existing resource — reference it by resource ID
 var hubVnetId = '${hs.existingHubVnetId}'
 `;
+
+  return `${hubVnetBlock}
+// ─── Spoke VNet ───────────────────────────────────────────────────────────────
+resource spokeVnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
+  name: '${clusterBase}-spoke-vnet'
+  location: location
+  properties: {
+    addressSpace: {
+      addressPrefixes: ['${hs.spokeVnetCidr}']
+    }
+    subnets: [
+      {
+        name: 'aks-subnet'
+        properties: {
+          addressPrefix: '${hs.aksSubnetCidr}'${hs.enableAzureFirewall && hs.enableEgressViaFirewall ? `
+          routeTable: {
+            id: aksRouteTable.id
+          }` : ''}
+        }
+      }
+    ]
+  }
+  tags: {
+    Environment: 'Production'
+    ManagedBy: 'AKS-Wizard'
+    Role: 'Spoke'
+  }
+}
+`;
+}
+
+/**
+ * Generates the remaining hub-spoke resources: VNet peerings, UDR, Azure Firewall,
+ * Azure Bastion, VPN Gateway, and outputs.
+ * These are placed AFTER the AKS cluster resource.
+ */
+function generateHubSpokeServicesBicep(cfg: import('../types/wizard').WizardConfig): string {
+  const hs = cfg.hubSpoke;
+  const clusterBase = cfg.clusterName || 'aks';
+
+  const gatewaySubnetCidr = carveSubnet(hs.hubVnetCidr, 128, 27);
+  const hubVnetRef = hs.hubMode === 'new' ? 'hubVnet.id' : 'hubVnetId';
+
+  // When a VPN Gateway exists in the hub, enable gateway transit on the peering so
+  // spoke VNets can reach on-premises networks through the hub gateway.
+  const hubToSpokePeeringProps = hs.enableVpnGateway
+    ? `allowGatewayTransit: true`
+    : `allowGatewayTransit: false`;
+  const spokeToHubPeeringProps = hs.enableVpnGateway
+    ? `useRemoteGateways: true`
+    : `useRemoteGateways: false`;
 
   const firewallBlock = hs.hubMode === 'new' && hs.enableAzureFirewall
     ? `
@@ -543,6 +630,60 @@ resource bastion 'Microsoft.Network/bastionHosts@2023-05-01' = {
 `
     : '';
 
+  const vpnGatewayBlock = hs.hubMode === 'new' && hs.enableVpnGateway
+    ? `
+// ─── VPN Gateway ──────────────────────────────────────────────────────────────
+resource vpnGatewayPip 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
+  name: '${clusterBase}-vpngw-pip'
+  location: location
+  sku: {
+    name: 'Standard'
+  }
+  zones: ['1', '2', '3']
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+  tags: {
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+
+resource vpnGateway 'Microsoft.Network/virtualNetworkGateways@2023-05-01' = {
+  name: '${clusterBase}-hub-vpngw'
+  location: location
+  properties: {
+    gatewayType: 'Vpn'
+    vpnType: 'RouteBased'
+    sku: {
+      name: 'VpnGw2AZ'
+      tier: 'VpnGw2AZ'
+    }
+    ipConfigurations: [
+      {
+        name: 'ipconfig'
+        properties: {
+          subnet: {
+            id: resourceId('Microsoft.Network/virtualNetworks/subnets', hubVnet.name, 'GatewaySubnet')
+          }
+          publicIPAddress: {
+            id: vpnGatewayPip.id
+          }
+        }
+      }
+    ]
+    // TODO: Add local network gateway and VPN connection resources for site-to-site connectivity
+    // See: https://learn.microsoft.com/azure/vpn-gateway/tutorial-create-gateway-portal
+  }
+  tags: {
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+
+output vpnGatewayId string = vpnGateway.id
+output gatewaySubnetCidr string = '${gatewaySubnetCidr}'
+`
+    : '';
+
   const udrBlock = hs.enableAzureFirewall && hs.enableEgressViaFirewall
     ? `
 // ─── UDR: Route AKS egress through Azure Firewall ────────────────────────────
@@ -561,54 +702,6 @@ resource aksRouteTable 'Microsoft.Network/routeTables@2023-05-01' = {
       }
     ]
     disableBgpRoutePropagation: true
-  }
-  tags: {
-    ManagedBy: 'AKS-Wizard'
-  }
-}
-`
-    : '';
-
-  const vpnGatewayBlock = hs.hubMode === 'new' && hs.enableVpnGateway
-    ? `
-// ─── VPN Gateway ──────────────────────────────────────────────────────────────
-resource vpnGatewayPublicIp 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
-  name: '${clusterBase}-vpngw-pip'
-  location: location
-  sku: {
-    name: 'Standard'
-  }
-  properties: {
-    publicIPAllocationMethod: 'Static'
-  }
-  tags: {
-    ManagedBy: 'AKS-Wizard'
-  }
-}
-
-resource vpnGateway 'Microsoft.Network/virtualNetworkGateways@2023-05-01' = {
-  name: '${clusterBase}-hub-vpngw'
-  location: location
-  properties: {
-    gatewayType: 'Vpn'
-    vpnType: 'RouteBased'
-    sku: {
-      name: 'VpnGw1'
-      tier: 'VpnGw1'
-    }
-    ipConfigurations: [
-      {
-        name: 'ipconfig'
-        properties: {
-          subnet: {
-            id: resourceId('Microsoft.Network/virtualNetworks/subnets', hubVnet.name, 'GatewaySubnet')
-          }
-          publicIPAddress: {
-            id: vpnGatewayPublicIp.id
-          }
-        }
-      }
-    ]
   }
   tags: {
     ManagedBy: 'AKS-Wizard'
@@ -654,40 +747,7 @@ resource privateDnsZoneSpokeLink 'Microsoft.Network/privateDnsZones/virtualNetwo
 `
     : '';
 
-  const hubVnetRef = hs.hubMode === 'new' ? 'hubVnet.id' : 'hubVnetId';
-
   return `
-// ═══════════════════════════════════════════════════════════════════════════════
-// Hub-Spoke Networking
-// ═══════════════════════════════════════════════════════════════════════════════
-${hubVnetBlock}
-// ─── Spoke VNet ───────────────────────────────────────────────────────────────
-resource spokeVnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
-  name: '${clusterBase}-spoke-vnet'
-  location: location
-  properties: {
-    addressSpace: {
-      addressPrefixes: ['${hs.spokeVnetCidr}']
-    }
-    subnets: [
-      {
-        name: 'aks-subnet'
-        properties: {
-          addressPrefix: '${hs.aksSubnetCidr}'${hs.enableAzureFirewall && hs.enableEgressViaFirewall ? `
-          routeTable: {
-            id: aksRouteTable.id
-          }` : ''}
-        }
-      }
-    ]
-  }
-  tags: {
-    Environment: 'Production'
-    ManagedBy: 'AKS-Wizard'
-    Role: 'Spoke'
-  }
-}
-
 // ─── VNet Peerings ────────────────────────────────────────────────────────────
 resource hubToSpokePeering 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2023-05-01' = {
   name: '${hs.hubMode === 'new' ? `\${hubVnet.name}/hub-to-spoke` : 'hub-to-spoke'}'
@@ -697,7 +757,7 @@ resource hubToSpokePeering 'Microsoft.Network/virtualNetworks/virtualNetworkPeer
     }
     allowVirtualNetworkAccess: true
     allowForwardedTraffic: true
-    allowGatewayTransit: ${hs.enableVpnGateway ? 'true' : 'false'}
+    ${hubToSpokePeeringProps}
   }
 }
 
@@ -709,7 +769,7 @@ resource spokeToHubPeering 'Microsoft.Network/virtualNetworks/virtualNetworkPeer
     }
     allowVirtualNetworkAccess: true
     allowForwardedTraffic: true
-    useRemoteGateways: ${hs.enableVpnGateway ? 'true' : 'false'}
+    ${spokeToHubPeeringProps}
   }
 }
 ${udrBlock}${firewallBlock}${bastionBlock}${vpnGatewayBlock}${privateDnsBlock}
