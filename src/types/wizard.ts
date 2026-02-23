@@ -66,6 +66,8 @@ export interface HubSpokeConfig {
   enablePrivateCluster: boolean;
   /** Deploy a Bastion host in the hub for secure VM access */
   enableBastion: boolean;
+  /** Deploy a VPN Gateway in the hub for on-premises connectivity (also creates GatewaySubnet) */
+  enableVpnGateway: boolean;
 }
 
 export interface MultiRegionConfig {
@@ -277,6 +279,7 @@ export const defaultConfig: WizardConfig = {
     enableEgressViaFirewall: false,
     enablePrivateCluster: false,
     enableBastion: false,
+    enableVpnGateway: false,
   },
 };
 
@@ -291,8 +294,8 @@ export const STEPS = [
   { id: 'security', label: 'Security' },
   { id: 'monitoring', label: 'Monitoring' },
   { id: 'addons', label: 'Add-ons' },
-  { id: 'multiregion', label: 'Multi-Region' },
   { id: 'hubspoke', label: 'Hub-Spoke' },
+  { id: 'multiregion', label: 'Multi-Region' },
   { id: 'storage', label: 'Storage' },
   { id: 'review', label: 'Review' },
   { id: 'templates', label: 'Templates' },
