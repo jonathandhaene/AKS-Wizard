@@ -17,6 +17,7 @@ A browser-based wizard that guides you step-by-step through configuring an Azure
 - **Auto-upgrade channel selector** – Configure `none`, `patch`, `stable`, `rapid`, or `node-image` upgrade strategies
 - **Azure Container Registry integration** – Attach an ACR to your cluster with a single toggle; role assignment generated automatically
 - **Multi-Region & High Availability** – Deploy AKS clusters across multiple Azure regions with Azure Front Door for zero-downtime failover
+- **Hub-Spoke Networking** – Deploy into an enterprise hub-spoke topology with a dedicated spoke VNet, VNet peering, optional Azure Firewall egress filtering, Azure Bastion, and private cluster support
 - **Template generation** – Bicep, Terraform, and GitHub Actions CI/CD workflows generated from your choices
 - **GitHub Actions workflow** – Uses `azure/k8s-bake@v3` to render Helm charts and `azure/k8s-deploy@v5` to deploy; includes an AKS upgrade-check job
 - **PowerShell deployment script** – The Deploy step generates a ready-to-run `deploy-aks.ps1` script (no browser-based deployment)
@@ -170,6 +171,80 @@ resource "azurerm_cdn_frontdoor_profile" "afd" {
 
 Select one or more secondary regions in addition to the primary region configured on the Basics step. Each selected region receives a dedicated AKS cluster in the generated templates. Choose regions that are geographically spread to maximise fault isolation — for example, pair `eastus` (primary) with `westeurope` and `southeastasia` (secondary).
 
+## Hub-Spoke Networking
+
+The **Hub-Spoke Networking** step (Step 12) deploys your AKS cluster into an enterprise hub-spoke topology, which is the recommended pattern for Azure enterprise landing zones.
+
+### Architecture Overview
+
+```
+             ┌──────────────────────────────────────────────────────┐
+             │                Hub VNet (10.0.0.0/16)                │
+             │                                                      │
+             │   ┌─────────────────┐     ┌──────────────────────┐  │
+             │   │  Azure Firewall │     │    Azure Bastion      │  │
+             │   └─────────────────┘     └──────────────────────┘  │
+             └───────────────────┬──────────────────────────────────┘
+                                 │ VNet Peering (bidirectional)
+             ┌───────────────────▼──────────────────────────────────┐
+             │               Spoke VNet (10.1.0.0/16)               │
+             │                                                      │
+             │   ┌────────────────────────────────────────────┐    │
+             │   │  aks-subnet (10.1.0.0/22)                  │    │
+             │   │        ┌─────────────────────────┐         │    │
+             │   │        │      AKS Cluster         │         │    │
+             │   │        └─────────────────────────┘         │    │
+             │   └────────────────────────────────────────────┘    │
+             └──────────────────────────────────────────────────────┘
+```
+
+### Benefits
+
+| Benefit | Description |
+|---------|-------------|
+| **Centralised security** | Azure Firewall in the hub inspects and filters all outbound traffic from the spoke using FQDN rules and threat intelligence. |
+| **Workload isolation** | Each application or environment gets its own spoke VNet. The hub enforces shared policy without allowing spoke-to-spoke traffic by default. |
+| **Secure access** | Azure Bastion in the hub provides browser-based SSH/RDP to nodes without exposing public IPs. Combine with a private cluster to remove the public Kubernetes API endpoint entirely. |
+| **Enterprise-ready** | Aligns with the [Azure landing zone accelerator](https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/hub-spoke-network-topology) and AKS baseline reference architecture. |
+
+### Configuring Hub-Spoke
+
+Enable **Hub-Spoke Topology** on Step 12 and choose whether to create a new hub VNet or peer to an existing one:
+
+| Hub Mode | When to use |
+|----------|-------------|
+| **🆕 Create New Hub** | You do not have an existing hub VNet. The wizard generates hub VNet, spoke VNet, peering, and optional Azure Firewall/Bastion resources. |
+| **🔗 Use Existing Hub** | You already operate a hub VNet. Provide the full resource ID; the wizard generates only spoke VNet and peering resources. |
+
+### Generated Templates
+
+When hub-spoke is enabled, the wizard appends hub VNet, spoke VNet, and peering resources to both the Bicep and Terraform templates:
+
+**Bicep snippet**
+
+```bicep
+resource spokeVnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
+  name: '${clusterName}-spoke-vnet'
+  location: location
+  properties: {
+    addressSpace: { addressPrefixes: ['10.1.0.0/16'] }
+    subnets: [{ name: 'aks-subnet', properties: { addressPrefix: '10.1.0.0/22' } }]
+  }
+}
+```
+
+**Terraform snippet**
+
+```hcl
+resource "azurerm_virtual_network" "spoke_vnet" {
+  name                = "${var.cluster_name}-spoke-vnet"
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  location            = azurerm_resource_group.aks_rg.location
+  address_space       = ["10.1.0.0/16"]
+}
+```
+
+
 ## Deploy to Azure – PowerShell Script
 
 The **Deploy** step generates a `deploy-aks.ps1` PowerShell script based on your wizard configuration that you can copy or download and run locally.
@@ -251,6 +326,20 @@ For a fully resilient architecture, also configure:
 - **Azure Database for PostgreSQL Flexible Server** with read replicas in each secondary region.
 - **Azure DNS** or **Azure Traffic Manager** as a backup routing layer if Front Door is unavailable.
 
+### How do I configure a hub-spoke network topology?
+
+1. Navigate to **Step 12: Hub-Spoke Networking**.
+2. Toggle **Enable Hub-Spoke Topology** to ON.
+3. Choose **Hub VNet Mode**:
+   - **🆕 Create New Hub** — the wizard generates a new hub VNet alongside the spoke. Set the **Hub VNet Address Space** (e.g. `10.0.0.0/16`).
+   - **🔗 Use Existing Hub** — paste the full Azure resource ID of your existing hub VNet.
+4. Set the **Spoke VNet Address Space** (e.g. `10.1.0.0/16`) and **AKS Node Subnet CIDR** (e.g. `10.1.0.0/22`). Ensure no CIDR ranges overlap.
+5. Under **Hub Services**, configure optional components:
+   - Enable **Azure Firewall** for centralised egress filtering. If the cluster will route egress through the firewall, also enable **Route AKS Egress Through Firewall** and remember to configure [AKS FQDN outbound rules](https://learn.microsoft.com/azure/aks/outbound-rules-control-egress) in your firewall policy after deployment.
+   - Enable **Azure Bastion** for secure browser-based SSH/RDP access without public IPs.
+   - Enable **Private AKS Cluster** to remove the public Kubernetes API endpoint.
+6. Proceed to **Templates** — the wizard appends spoke VNet, hub VNet (if new), peering, UDR, Firewall, and Bastion resources to the generated Bicep and Terraform templates.
+
 ### How do I migrate from AKS Standard to AKS Automatic?
 
 AKS Automatic is a different cluster SKU and cannot be converted in-place. The recommended migration path is:
@@ -331,6 +420,7 @@ src/
   steps/        – One component per wizard step
     MaturityAssessment.tsx  – Team readiness questionnaire
     MultiRegion.tsx         – Multi-region deployment, Azure Front Door, WAF, health probes
+    HubSpoke.tsx            – Hub-spoke topology: spoke VNet, hub VNet, peering, Firewall, Bastion
     Pods.tsx                – Pod resource limits, affinity rules, and networking
   types/        – TypeScript types (WizardConfig, AksMode, AutoUpgradeChannel, MultiRegionConfig, …)
   utils/        – Template generators (Bicep, Terraform, PowerShell, GitHub Actions workflow)
