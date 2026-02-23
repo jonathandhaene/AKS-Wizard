@@ -237,6 +237,29 @@ export function Review() {
         />
 
         <Section
+          title="Hub-Spoke"
+          items={[
+            ['Hub-Spoke', config.hubSpoke.enableHubSpoke ? '✅ Enabled' : 'Disabled'],
+            ...(config.hubSpoke.enableHubSpoke
+              ? ([
+                  ['Hub Mode', config.hubSpoke.hubMode === 'existing' ? 'Existing Hub' : 'New Hub'],
+                  ...(config.hubSpoke.hubMode === 'existing'
+                    ? [['Hub VNet ID', config.hubSpoke.existingHubVnetId || '—'] as [string, string]]
+                    : [['Hub VNet CIDR', config.hubSpoke.hubVnetCidr] as [string, string]]),
+                  ['Spoke VNet CIDR', config.hubSpoke.spokeVnetCidr],
+                  ['AKS Subnet CIDR', config.hubSpoke.aksSubnetCidr],
+                  ['Azure Firewall', config.hubSpoke.enableAzureFirewall ? '✅ Enabled' : 'Disabled'],
+                  ...(config.hubSpoke.enableAzureFirewall
+                    ? [['Egress via Firewall', config.hubSpoke.enableEgressViaFirewall ? '✅ Enabled' : 'Disabled'] as [string, string]]
+                    : []),
+                  ['Azure Bastion', config.hubSpoke.enableBastion ? '✅ Enabled' : 'Disabled'],
+                  ['Private Cluster', config.hubSpoke.enablePrivateCluster ? '✅ Enabled' : 'Disabled'],
+                ] as [string, string][])
+              : []),
+          ]}
+        />
+
+        <Section
           title="Multi-Region"
           items={[
             ['Multi-Region', config.multiRegion.enableMultiRegion ? '✅ Enabled' : 'Disabled'],

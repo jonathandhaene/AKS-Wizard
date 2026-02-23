@@ -162,7 +162,7 @@ resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     principalType: 'ServicePrincipal'
   }
 }
-` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorBicep(cfg) : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableApim ? generateApimBicep(cfg) : ''}`;
+` : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableFrontDoor ? generateFrontDoorBicep(cfg) : ''}${cfg.multiRegion.enableMultiRegion && cfg.multiRegion.enableApim ? generateApimBicep(cfg) : ''}${cfg.hubSpoke.enableHubSpoke ? generateHubSpokeBicep(cfg) : ''}`;
 
 }
 
@@ -387,5 +387,240 @@ resource apimService 'Microsoft.ApiManagement/service@2024-05-01' = {
 
 output apimGatewayUrl string = apimService.properties.gatewayUrl
 output apimPortalUrl string = apimService.properties.developerPortalUrl
+`;
+}
+
+function generateHubSpokeBicep(cfg: import('../types/wizard').WizardConfig): string {
+  const hs = cfg.hubSpoke;
+  const clusterBase = cfg.clusterName || 'aks';
+
+  // Carve a subnet by offsetting the last two octets of the base IP.
+  // offset is added to the 4th octet (with carry into the 3rd).
+  function carveSubnet(baseCidr: string, offset: number, prefixLen: number): string {
+    const [ip] = baseCidr.split('/');
+    const parts = ip.split('.').map(Number);
+    parts[3] += offset;
+    if (parts[3] >= 256) { parts[2] += Math.floor(parts[3] / 256); parts[3] %= 256; }
+    return `${parts.join('.')}/${prefixLen}`;
+  }
+
+  // AzureFirewallSubnet requires /26 minimum; AzureBastionSubnet requires /26 minimum.
+  // We carve them at offset 0 (/26) and offset 64 (/26) respectively so they never overlap.
+  const fwSubnetCidr = carveSubnet(hs.hubVnetCidr, 0, 26);
+  const bastionSubnetCidr = carveSubnet(hs.hubVnetCidr, 64, 26);
+
+  const hubVnetBlock = hs.hubMode === 'new'
+    ? `
+// ─── Hub VNet ─────────────────────────────────────────────────────────────────
+resource hubVnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
+  name: '${clusterBase}-hub-vnet'
+  location: location
+  properties: {
+    addressSpace: {
+      addressPrefixes: ['${hs.hubVnetCidr}']
+    }
+    subnets: [${hs.enableAzureFirewall ? `
+      {
+        name: 'AzureFirewallSubnet'
+        properties: {
+          addressPrefix: '${fwSubnetCidr}'
+        }
+      }` : ''}${hs.enableBastion ? `
+      {
+        name: 'AzureBastionSubnet'
+        properties: {
+          addressPrefix: '${bastionSubnetCidr}'
+        }
+      }` : ''}
+    ]
+  }
+  tags: {
+    Environment: 'Production'
+    ManagedBy: 'AKS-Wizard'
+    Role: 'Hub'
+  }
+}
+`
+    : `// Hub VNet is an existing resource — reference it by resource ID
+var hubVnetId = '${hs.existingHubVnetId}'
+`;
+
+  const firewallBlock = hs.hubMode === 'new' && hs.enableAzureFirewall
+    ? `
+// ─── Azure Firewall ───────────────────────────────────────────────────────────
+resource firewallPublicIp 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
+  name: '${clusterBase}-fw-pip'
+  location: location
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+  tags: {
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+
+resource firewall 'Microsoft.Network/azureFirewalls@2023-05-01' = {
+  name: '${clusterBase}-hub-fw'
+  location: location
+  properties: {
+    sku: {
+      name: 'AZFW_VNet'
+      tier: 'Premium'
+    }
+    ipConfigurations: [
+      {
+        name: 'ipconfig'
+        properties: {
+          subnet: {
+            id: resourceId('Microsoft.Network/virtualNetworks/subnets', hubVnet.name, 'AzureFirewallSubnet')
+          }
+          publicIPAddress: {
+            id: firewallPublicIp.id
+          }
+        }
+      }
+    ]
+  }
+  tags: {
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+
+output firewallPrivateIp string = firewall.properties.ipConfigurations[0].properties.privateIPAddress
+`
+    : '';
+
+  const bastionBlock = hs.hubMode === 'new' && hs.enableBastion
+    ? `
+// ─── Azure Bastion ────────────────────────────────────────────────────────────
+resource bastionPublicIp 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
+  name: '${clusterBase}-bastion-pip'
+  location: location
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+  tags: {
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+
+resource bastion 'Microsoft.Network/bastionHosts@2023-05-01' = {
+  name: '${clusterBase}-hub-bastion'
+  location: location
+  properties: {
+    ipConfigurations: [
+      {
+        name: 'ipconfig'
+        properties: {
+          subnet: {
+            id: resourceId('Microsoft.Network/virtualNetworks/subnets', hubVnet.name, 'AzureBastionSubnet')
+          }
+          publicIPAddress: {
+            id: bastionPublicIp.id
+          }
+        }
+      }
+    ]
+  }
+  tags: {
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+`
+    : '';
+
+  const udrBlock = hs.enableAzureFirewall && hs.enableEgressViaFirewall
+    ? `
+// ─── UDR: Route AKS egress through Azure Firewall ────────────────────────────
+resource aksRouteTable 'Microsoft.Network/routeTables@2023-05-01' = {
+  name: '${clusterBase}-spoke-udr'
+  location: location
+  properties: {
+    routes: [
+      {
+        name: 'route-to-firewall'
+        properties: {
+          addressPrefix: '0.0.0.0/0'
+          nextHopType: 'VirtualAppliance'
+          nextHopIpAddress: ${hs.hubMode === 'new' ? 'firewall.properties.ipConfigurations[0].properties.privateIPAddress' : "'<firewall-private-ip>'"}
+        }
+      }
+    ]
+    disableBgpRoutePropagation: true
+  }
+  tags: {
+    ManagedBy: 'AKS-Wizard'
+  }
+}
+`
+    : '';
+
+  const hubVnetRef = hs.hubMode === 'new' ? 'hubVnet.id' : 'hubVnetId';
+
+  return `
+// ═══════════════════════════════════════════════════════════════════════════════
+// Hub-Spoke Networking
+// ═══════════════════════════════════════════════════════════════════════════════
+${hubVnetBlock}
+// ─── Spoke VNet ───────────────────────────────────────────────────────────────
+resource spokeVnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
+  name: '${clusterBase}-spoke-vnet'
+  location: location
+  properties: {
+    addressSpace: {
+      addressPrefixes: ['${hs.spokeVnetCidr}']
+    }
+    subnets: [
+      {
+        name: 'aks-subnet'
+        properties: {
+          addressPrefix: '${hs.aksSubnetCidr}'${hs.enableAzureFirewall && hs.enableEgressViaFirewall ? `
+          routeTable: {
+            id: aksRouteTable.id
+          }` : ''}
+        }
+      }
+    ]
+  }
+  tags: {
+    Environment: 'Production'
+    ManagedBy: 'AKS-Wizard'
+    Role: 'Spoke'
+  }
+}
+
+// ─── VNet Peerings ────────────────────────────────────────────────────────────
+resource hubToSpokePeering 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2023-05-01' = {
+  name: '${hs.hubMode === 'new' ? `\${hubVnet.name}/hub-to-spoke` : 'hub-to-spoke'}'
+  properties: {
+    remoteVirtualNetwork: {
+      id: spokeVnet.id
+    }
+    allowVirtualNetworkAccess: true
+    allowForwardedTraffic: true
+    allowGatewayTransit: false
+  }
+}
+
+resource spokeToHubPeering 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2023-05-01' = {
+  name: '\${spokeVnet.name}/spoke-to-hub'
+  properties: {
+    remoteVirtualNetwork: {
+      id: ${hubVnetRef}
+    }
+    allowVirtualNetworkAccess: true
+    allowForwardedTraffic: true
+    useRemoteGateways: false
+  }
+}
+${udrBlock}${firewallBlock}${bastionBlock}
+output spokeVnetId string = spokeVnet.id
+output aksSubnetId string = resourceId('Microsoft.Network/virtualNetworks/subnets', spokeVnet.name, 'aks-subnet')
 `;
 }
