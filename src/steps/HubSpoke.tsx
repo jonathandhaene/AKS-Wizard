@@ -5,7 +5,7 @@ import { useWizard } from '../contexts/WizardContext';
 
 export function HubSpoke() {
   const { config, updateConfig } = useWizard();
-  const { hubSpoke } = config;
+  const { hubSpoke, multiRegion } = config;
 
   const update = (partial: Partial<typeof hubSpoke>) =>
     updateConfig({ hubSpoke: { ...hubSpoke, ...partial } });
@@ -271,6 +271,41 @@ export function HubSpoke() {
               </button>
             </div>
 
+            {/* VPN Gateway */}
+            {hubSpoke.hubMode === 'new' && (
+              <div
+                className="flex items-center justify-between py-3 border-b"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-xl">🔌</span>
+                  <div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                        Deploy VPN Gateway in Hub
+                      </span>
+                      <Tooltip content="A VPN or ExpressRoute Gateway in the hub provides secure hybrid connectivity between your on-premises network and the Azure hub-spoke topology. Requires a dedicated GatewaySubnet (/27 or larger) in the hub VNet.">
+                        <span className="text-xs cursor-help" style={{ color: 'var(--info)' }}>ⓘ</span>
+                      </Tooltip>
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      Provisions a GatewaySubnet (/27) in the hub for VPN or ExpressRoute connectivity
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => update({ enableVpnGateway: !hubSpoke.enableVpnGateway })}
+                  className="relative inline-flex h-6 w-11 rounded-full transition-colors flex-shrink-0"
+                  style={{ background: hubSpoke.enableVpnGateway ? 'var(--success)' : 'var(--border)' }}
+                >
+                  <span
+                    className="inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform mt-0.5 ml-0.5"
+                    style={{ transform: hubSpoke.enableVpnGateway ? 'translateX(20px)' : 'translateX(0)' }}
+                  />
+                </button>
+              </div>
+            )}
+
             {/* Private Cluster */}
             <div className="flex items-center justify-between py-3">
               <div className="flex items-start gap-3">
@@ -310,6 +345,24 @@ export function HubSpoke() {
             </InfoBox>
           )}
 
+          {hubSpoke.enablePrivateCluster && (
+            <InfoBox variant="info" title="Private DNS Zone">
+              A private cluster uses an Azure Private DNS Zone (
+              <code>privatelink.{config.region}.azmk8s.io</code>) for API server name resolution.
+              The wizard generates this zone and links it to both the hub and spoke VNets so that
+              nodes and any jump box can resolve the private API server endpoint.
+            </InfoBox>
+          )}
+
+          {hubSpoke.enablePrivateCluster && multiRegion.enableMultiRegion && multiRegion.enableFrontDoor && multiRegion.frontDoorSkuName === 'Standard_AzureFrontDoor' && (
+            <InfoBox variant="warning" title="Private cluster + Azure Front Door requires Premium SKU">
+              A private AKS cluster exposes its ingress only via private IPs. Azure Front Door must use{' '}
+              <strong>Private Link origins</strong> to reach private backends, which requires the{' '}
+              <strong>Premium SKU</strong>. Switch to Premium in the Multi-Region step to enable Private
+              Link origin support.
+            </InfoBox>
+          )}
+
           {hubSpoke.enableAzureFirewall && hubSpoke.enableEgressViaFirewall && (
             <InfoBox variant="tip" title="UDR + Firewall egress">
               When routing AKS egress through Azure Firewall, ensure the required AKS{' '}
@@ -322,6 +375,23 @@ export function HubSpoke() {
                 outbound FQDN/IP rules
               </a>{' '}
               are configured in your firewall policy, otherwise cluster operations will fail.
+            </InfoBox>
+          )}
+
+          {multiRegion.enableMultiRegion && (
+            <InfoBox variant="tip" title="Multi-Region + Hub-Spoke">
+              You have both Hub-Spoke and Multi-Region enabled. Per Microsoft best practices, each
+              regional AKS cluster should reside in its own spoke VNet peered to a regional hub.{' '}
+              <a
+                href="https://learn.microsoft.com/azure/architecture/reference-architectures/containers/aks/baseline-aks"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'var(--accent)' }}
+              >
+                Azure Front Door
+              </a>{' '}
+              (configured on the Multi-Region step) acts as the global entry point across all
+              regional spokes. Each region's spoke VNet should use a non-overlapping CIDR range.
             </InfoBox>
           )}
         </>

@@ -63,6 +63,17 @@ export function generateTerraform(cfg: WizardConfig): string {
   azure_policy_enabled = true`
     : '';
 
+  // Hub-spoke: AKS nodes placed in the spoke subnet
+  const spokeSubnetArg = cfg.hubSpoke.enableHubSpoke
+    ? `\n    vnet_subnet_id      = azurerm_subnet.aks_subnet.id`
+    : '';
+
+  // Private cluster configuration
+  const privateClusterArg = cfg.hubSpoke.enableHubSpoke && cfg.hubSpoke.enablePrivateCluster
+    ? `
+  private_cluster_enabled = true`
+    : '';
+
   const workspaceResource = cfg.enableContainerInsights && !cfg.logAnalyticsWorkspaceId
     ? `
 resource "azurerm_log_analytics_workspace" "aks_law" {
@@ -91,7 +102,8 @@ resource "azurerm_kubernetes_cluster_node_pool" "user_${idx + 1}" {
       : `
   enable_auto_scaling   = false
   node_count            = ${pool.nodeCount}`
-  }
+  }${cfg.hubSpoke.enableHubSpoke ? `
+  vnet_subnet_id        = azurerm_subnet.aks_subnet.id` : ''}
 }
 `,
     )
@@ -121,11 +133,11 @@ resource "azurerm_kubernetes_cluster" "aks" {
   location            = azurerm_resource_group.aks_rg.location
   resource_group_name = azurerm_resource_group.aks_rg.name
   dns_prefix          = "${dnsPrefix}"
-  kubernetes_version  = "${cfg.kubernetesVersion}"${rbacBlock}${autoUpgradeBlock}${ingressBlock}${azurePolicyBlock}
+  kubernetes_version  = "${cfg.kubernetesVersion}"${rbacBlock}${autoUpgradeBlock}${ingressBlock}${azurePolicyBlock}${privateClusterArg}
 
   default_node_pool {
     name    = "${cfg.systemNodePool.name}"
-    vm_size = "${cfg.systemNodePool.vmSize}"${autoScaleArgs}
+    vm_size = "${cfg.systemNodePool.vmSize}"${autoScaleArgs}${spokeSubnetArg}
   }
 
   identity {
@@ -388,10 +400,12 @@ function generateHubSpokeTerraform(cfg: WizardConfig): string {
     return `${parts.join('.')}/${prefixLen}`;
   }
 
-  // AzureFirewallSubnet and AzureBastionSubnet both require /26 minimum.
-  // Carve them at offset 0 and offset 64 so they never overlap.
+  // AzureFirewallSubnet and AzureBastionSubnet both require /26 minimum;
+  // GatewaySubnet requires /27 minimum.
+  // Carve them at offset 0 (/26), offset 64 (/26), and offset 128 (/27) so they never overlap.
   const fwSubnetCidr = carveSubnet(hs.hubVnetCidr, 0, 26);
   const bastionSubnetCidr = carveSubnet(hs.hubVnetCidr, 64, 26);
+  const gatewaySubnetCidr = carveSubnet(hs.hubVnetCidr, 128, 27);
 
   const hubVnetBlock = hs.hubMode === 'new'
     ? `
@@ -421,6 +435,13 @@ resource "azurerm_subnet" "hub_bastion_subnet" {
   resource_group_name  = azurerm_resource_group.aks_rg.name
   virtual_network_name = azurerm_virtual_network.hub_vnet.name
   address_prefixes     = ["${bastionSubnetCidr}"]
+}
+` : ''}${hs.enableVpnGateway ? `
+resource "azurerm_subnet" "hub_gateway_subnet" {
+  name                 = "GatewaySubnet"
+  resource_group_name  = azurerm_resource_group.aks_rg.name
+  virtual_network_name = azurerm_virtual_network.hub_vnet.name
+  address_prefixes     = ["${gatewaySubnetCidr}"]
 }
 ` : ''}`
     : `# Hub VNet is pre-existing — set this local to its resource ID
@@ -491,6 +512,50 @@ resource "azurerm_bastion_host" "hub_bastion" {
 `
     : '';
 
+  const vpnGatewayBlock = hs.hubMode === 'new' && hs.enableVpnGateway
+    ? `
+# ─── VPN Gateway ───────────────────────────────────────────────────────────────
+resource "azurerm_public_ip" "vpngw_pip" {
+  name                = "${clusterBase}-vpngw-pip"
+  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  zones               = ["1", "2", "3"]
+  tags                = { ManagedBy = "AKS-Wizard" }
+}
+
+resource "azurerm_virtual_network_gateway" "vpn_gateway" {
+  name                = "${clusterBase}-hub-vpngw"
+  location            = azurerm_resource_group.aks_rg.location
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  type                = "Vpn"
+  vpn_type            = "RouteBased"
+  sku                 = "VpnGw2AZ"
+
+  ip_configuration {
+    name                 = "ipconfig"
+    subnet_id            = azurerm_subnet.hub_gateway_subnet.id
+    public_ip_address_id = azurerm_public_ip.vpngw_pip.id
+  }
+
+  # TODO: Add azurerm_local_network_gateway and azurerm_virtual_network_gateway_connection
+  # for site-to-site VPN connectivity to on-premises networks.
+  # See: https://learn.microsoft.com/azure/vpn-gateway/tutorial-create-gateway-portal
+
+  tags = { ManagedBy = "AKS-Wizard" }
+}
+
+output "vpn_gateway_id" {
+  value = azurerm_virtual_network_gateway.vpn_gateway.id
+}
+
+output "gateway_subnet_cidr" {
+  value = "${gatewaySubnetCidr}"
+}
+`
+    : '';
+
   const udrBlock = hs.enableAzureFirewall && hs.enableEgressViaFirewall
     ? `
 # ─── UDR: route AKS egress through Azure Firewall ─────────────────────────────
@@ -516,9 +581,47 @@ resource "azurerm_subnet_route_table_association" "aks_subnet_udr" {
 `
     : '';
 
+  const privateDnsBlock = hs.enablePrivateCluster
+    ? `
+# ─── Private DNS Zone (for private AKS API server) ─────────────────────────────
+resource "azurerm_private_dns_zone" "aks_private_dns" {
+  name                = "privatelink.${cfg.region}.azmk8s.io"
+  resource_group_name = azurerm_resource_group.aks_rg.name
+  tags                = { ManagedBy = "AKS-Wizard" }
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "hub_vnet_link" {
+  name                  = "hub-vnet-link"
+  resource_group_name   = azurerm_resource_group.aks_rg.name
+  private_dns_zone_name = azurerm_private_dns_zone.aks_private_dns.name
+  virtual_network_id    = ${hs.hubMode === 'new' ? 'azurerm_virtual_network.hub_vnet.id' : 'local.hub_vnet_id'}
+  registration_enabled  = false
+  tags                  = { ManagedBy = "AKS-Wizard" }
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "spoke_vnet_link" {
+  name                  = "spoke-vnet-link"
+  resource_group_name   = azurerm_resource_group.aks_rg.name
+  private_dns_zone_name = azurerm_private_dns_zone.aks_private_dns.name
+  virtual_network_id    = azurerm_virtual_network.spoke_vnet.id
+  registration_enabled  = false
+  tags                  = { ManagedBy = "AKS-Wizard" }
+}
+`
+    : '';
+
   const hubVnetRef = hs.hubMode === 'new'
     ? 'azurerm_virtual_network.hub_vnet.id'
     : 'local.hub_vnet_id';
+
+  // When a VPN Gateway exists in the hub, enable gateway transit so spoke VNets
+  // can reach on-premises networks through the hub gateway.
+  const hubToSpokePeeringGateway = hs.enableVpnGateway
+    ? `\n  allow_gateway_transit        = true`
+    : '';
+  const spokeToHubPeeringGateway = hs.enableVpnGateway
+    ? `\n  use_remote_gateways          = true`
+    : '';
 
   return `
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -553,7 +656,7 @@ resource "azurerm_virtual_network_peering" "hub_to_spoke" {
   virtual_network_name      = ${hs.hubMode === 'new' ? 'azurerm_virtual_network.hub_vnet.name' : '"<hub-vnet-name>"'}
   remote_virtual_network_id = azurerm_virtual_network.spoke_vnet.id
   allow_virtual_network_access = true
-  allow_forwarded_traffic      = true
+  allow_forwarded_traffic      = true${hubToSpokePeeringGateway}
 }
 
 resource "azurerm_virtual_network_peering" "spoke_to_hub" {
@@ -562,9 +665,9 @@ resource "azurerm_virtual_network_peering" "spoke_to_hub" {
   virtual_network_name      = azurerm_virtual_network.spoke_vnet.name
   remote_virtual_network_id = ${hubVnetRef}
   allow_virtual_network_access = true
-  allow_forwarded_traffic      = true
+  allow_forwarded_traffic      = true${spokeToHubPeeringGateway}
 }
-${udrBlock}${firewallBlock}${bastionBlock}
+${udrBlock}${firewallBlock}${bastionBlock}${vpnGatewayBlock}${privateDnsBlock}
 output "spoke_vnet_id" {
   value = azurerm_virtual_network.spoke_vnet.id
 }
