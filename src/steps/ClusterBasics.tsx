@@ -18,7 +18,7 @@ const REGIONS = [
   { value: 'brazilsouth', label: 'Brazil South' },
 ];
 
-const K8S_VERSIONS = ['1.31.x', '1.30.x', '1.29.x'];
+const K8S_VERSIONS = ['1.32.x', '1.31.x', '1.30.x'];
 
 export function ClusterBasics() {
   const { config, updateConfig } = useWizard();

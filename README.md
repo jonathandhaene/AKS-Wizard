@@ -339,7 +339,7 @@ Before going to production with AKS Standard, confirm your team can:
 
 ### Which Kubernetes version should I use?
 
-Use the latest supported minor version (currently `1.31.x`) unless you have a specific compatibility requirement. AKS supports the three most recent minor versions; clusters on older versions will stop receiving security patches.
+Use the latest supported minor version (currently `1.32.x`) unless you have a specific compatibility requirement. AKS supports the three most recent minor versions; clusters on older versions will stop receiving security patches. See [Supported Kubernetes versions in AKS](https://learn.microsoft.com/azure/aks/supported-kubernetes-versions).
 
 ### How do I configure a multi-region, always-on architecture?
 
@@ -400,7 +400,7 @@ Enable the **Azure Container Registry Integration** toggle on the Add-ons step a
 
 ### ⚠️ Is the NGINX ingress controller still supported?
 
-The community-maintained **ingress-nginx** controller is being retired as of **March 2026** and will no longer receive security updates after that date. It is not recommended for new deployments.
+The community-maintained **ingress-nginx** controller is being retired as of **March 2026** and will no longer receive security updates after that date. It is not recommended for new deployments. See the [official Kubernetes end-of-life announcement](https://kubernetes.io/blog/2025/01/23/ingress-nginx-gateway-api-migration/) for details.
 
 **Migration alternatives:**
 

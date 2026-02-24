@@ -167,7 +167,7 @@ Azure Subscription ID  ⓘ  [ xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx ]
 Resource Group Name    ⓘ  [ my-aks-rg                              ]
 Cluster Name           ⓘ  [ my-aks-cluster                         ]
 Azure Region           ⓘ  [ East US                          ▼     ]
-Kubernetes Version     ⓘ  [ 1.31.x                           ▼     ]
+Kubernetes Version     ⓘ  [ 1.32.x                           ▼     ]
 ```
 
 ### Screenshot
@@ -183,7 +183,7 @@ Kubernetes Version     ⓘ  [ 1.31.x                           ▼     ]
 | **Resource Group Name** | A logical container that groups all Azure resources for this cluster. | Use a dedicated resource group per cluster to simplify cost tracking, access control, and deletion. If the group does not exist, the deployment script creates it automatically. |
 | **Cluster Name** | A unique name for the AKS cluster within the resource group. | Must be 1–63 characters, alphanumeric characters and hyphens only. The name is used in Azure Portal URLs, the DNS FQDN, and the cluster's API server endpoint. |
 | **Azure Region** | The Azure datacenter region where the cluster control plane and node VMs are created. | Choose a region **closest to your users or dependent services** to minimise latency. Feature availability (e.g., Availability Zones, certain VM sizes) varies by region. |
-| **Kubernetes Version** | The Kubernetes minor version to run on the cluster. | AKS supports the **latest three minor versions**. Newer versions include security patches and new features but may require workload compatibility testing. The default is the latest available version (currently **1.31.x**). |
+| **Kubernetes Version** | The Kubernetes minor version to run on the cluster. | AKS supports the **latest three minor versions**. Newer versions include security patches and new features but may require workload compatibility testing. The default is the latest available version (currently **1.32.x**). |
 
 ### Official References
 
@@ -465,7 +465,7 @@ Network Plugin
 
 DNS Prefix         ⓘ  [ my-aks-cluster                 ]
 Service CIDR       ⓘ  [ 10.0.0.0/16                    ]
-Docker Bridge CIDR ⓘ  [ 172.17.0.1/16                  ]
+Docker Bridge CIDR ⓘ  [ 172.17.0.1/16 (deprecated) ]
 
 Load Balancer SKU  ⓘ
 [ ⭐ Standard (Recommended) ]  [ 🔹 Basic ]
@@ -473,7 +473,7 @@ Load Balancer SKU  ⓘ
 Ingress Controller  ⓘ
 [ 🚫 None ]  [ 🔷 NGINX ]  [ 🌐 Application Gateway ]  [ 🔶 Traefik ]
 
-Enable Service Mesh (Open Service Mesh / Istio)  ⓘ  [ OFF ]
+Enable Service Mesh (Istio)  ⓘ  [ OFF ]
 ```
 
 ### Screenshot
@@ -487,10 +487,10 @@ Enable Service Mesh (Open Service Mesh / Istio)  ⓘ  [ OFF ]
 | **Network Plugin** | **Azure CNI** (default), Kubenet | Determines how pods receive IP addresses. | **Azure CNI**: Pods receive IPs directly from the VNet subnet. Required for Azure Network Policies. Better integration with other Azure services. Requires more IP address planning. **Kubenet**: Pods use a private IP range with NAT. Simpler to set up but does not support Azure Network Policies, and pod-to-pod communication from outside the cluster is more complex. |
 | **DNS Prefix** | String (alphanumeric + hyphens) | Unique prefix used to form the cluster's API server FQDN: `<dns-prefix>.<region>.azmk8s.io`. | Defaults to the cluster name. Choosing a descriptive, unique prefix makes it easier to identify the cluster API server endpoint in scripts, kubeconfig files, and monitoring dashboards. |
 | **Service CIDR** | CIDR notation (default: `10.0.0.0/16`) | IP address range reserved for Kubernetes internal **Service** objects (ClusterIP). | Must not overlap with any VNet subnet or Pod CIDR. A `/16` provides up to 65,536 service IPs, which is more than sufficient for virtually all clusters. |
-| **Docker Bridge CIDR** | CIDR notation (default: `172.17.0.1/16`) | IP range for the legacy Docker bridge network on each node, used for container-to-container communication within a node. | Rarely needs changing. Ensure it does not conflict with your VNet or on-premises networks if using VPN/ExpressRoute. |
-| **Load Balancer SKU** | **Standard** (default), Basic | The Azure Load Balancer tier provisioned for external-facing services. | **Standard** supports Availability Zones, up to 1,000 backend pool members, health probe diagnostics, and is required for production. **Basic** is limited and Microsoft is deprecating it; avoid for new deployments. |
+| **Docker Bridge CIDR** | CIDR notation (default: `172.17.0.1/16`) | ⚠️ **Deprecated and removed**: This field was removed from the AKS networking profile in API version 2022-08-01 and from the Terraform `azurerm` provider in v4.0. It is displayed here for reference only and is **not** included in the generated templates. See [AKS release notes](https://learn.microsoft.com/azure/aks/release-notes). | No longer applied to new AKS clusters. |
+| **Load Balancer SKU** | **Standard** (default), Basic | The Azure Load Balancer tier provisioned for external-facing services. | **Standard** supports Availability Zones, up to 1,000 backend pool members, health probe diagnostics, and is required for production. **Basic** SKU was **retired on September 30, 2025** and is no longer available for new deployments — use Standard. See [Azure Load Balancer Basic SKU retirement](https://learn.microsoft.com/azure/load-balancer/load-balancer-basic-upgrade-guidance). |
 | **Ingress Controller** | **None** (default), NGINX ⚠️, Application Gateway, Traefik | Deploys and configures an ingress controller to route HTTP/HTTPS traffic into the cluster. | **None**: no managed ingress; configure manually after deployment. **NGINX** ⚠️ **(deprecated — retiring March 2026)**: community-maintained ingress-nginx controller; no longer recommended for new deployments. Migrate to the [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io/) or the [F5/NGINX Inc. Ingress Controller](https://docs.nginx.com/nginx-ingress-controller/). **Application Gateway**: Azure-native Layer 7 load balancer with WAF support (AGIC). **Traefik**: cloud-native with automatic Let's Encrypt support. |
-| **Enable Service Mesh** | ❌ OFF | Deploys a service mesh (Open Service Mesh or Istio) to the cluster. | Adds mutual TLS (mTLS) between services, fine-grained traffic policies, and enhanced observability. Adds operational complexity and resource overhead. |
+| **Enable Service Mesh** | ❌ OFF | Deploys the Istio service mesh as a managed AKS add-on. Note: Open Service Mesh (OSM) was retired as a managed AKS add-on in [November 2023](https://learn.microsoft.com/azure/aks/open-service-mesh-about). | Adds mutual TLS (mTLS) between services, fine-grained traffic policies, and enhanced observability. Adds operational complexity and resource overhead. |
 
 ### IP Address Planning Checklist
 
@@ -498,21 +498,26 @@ When using **Azure CNI**, ensure the following IP ranges **do not overlap**:
 
 1. VNet subnet address space
 2. Service CIDR (`10.0.0.0/16` default)
-3. Docker bridge CIDR (`172.17.0.1/16` default)
-4. Any on-premises networks connected via VPN or ExpressRoute
+3. Any on-premises networks connected via VPN or ExpressRoute
+
+> **Note:** The Docker bridge CIDR (`--docker-bridge-address`) was removed from the AKS network profile. You do not need to reserve a separate range for it on new clusters. See [AKS networking concepts](https://learn.microsoft.com/azure/aks/concepts-network).
 
 ### Official References
 
 - [Network concepts for AKS](https://learn.microsoft.com/azure/aks/concepts-network)
 - [Azure CNI networking in AKS](https://learn.microsoft.com/azure/aks/configure-azure-cni)
+- [Azure CNI Overlay networking in AKS](https://learn.microsoft.com/azure/aks/azure-cni-overlay)
 - [Kubenet networking in AKS](https://learn.microsoft.com/azure/aks/configure-kubenet)
 - [Azure Standard Load Balancer overview](https://learn.microsoft.com/azure/load-balancer/load-balancer-overview)
+- [Azure Basic Load Balancer retirement (September 30, 2025)](https://learn.microsoft.com/azure/load-balancer/load-balancer-basic-upgrade-guidance)
 - [Plan IP addressing for AKS](https://learn.microsoft.com/azure/aks/configure-azure-cni#plan-ip-addressing-for-your-cluster)
 - [Ingress controllers in AKS](https://learn.microsoft.com/azure/aks/concepts-network#ingress-controllers)
 - [ingress-nginx end-of-life announcement (Kubernetes blog)](https://kubernetes.io/blog/2025/01/23/ingress-nginx-gateway-api-migration/)
 - [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io/)
 - [NGINX Ingress Controller by F5/NGINX Inc.](https://docs.nginx.com/nginx-ingress-controller/)
 - [Service mesh with AKS (Istio)](https://learn.microsoft.com/azure/aks/istio-about)
+- [Deploy Istio-based service mesh add-on for AKS](https://learn.microsoft.com/azure/aks/istio-deploy-addon)
+- [Open Service Mesh (OSM) retirement notice](https://learn.microsoft.com/azure/aks/open-service-mesh-about)
 
 ---
 
@@ -568,7 +573,7 @@ Network Policy  ⓘ
 | **Enable RBAC** | ✅ ON | Kubernetes Role-Based Access Control restricts what each user, service account, or group can do within the cluster. | **Strongly recommended for all clusters.** Without RBAC, any authenticated user has full cluster access. With RBAC, you define fine-grained permissions via `Role`, `ClusterRole`, `RoleBinding`, and `ClusterRoleBinding` objects. |
 | **Azure AD Integration** | ❌ OFF | Integrates the cluster with Microsoft Entra ID (formerly Azure Active Directory) for user authentication. | Enables enterprise single sign-on (SSO), group-based access control, and Conditional Access policies. Users authenticate with their corporate credentials; group membership drives cluster permissions. Requires an Azure AD Tenant ID. |
 | **Azure AD Tenant ID** | — | The GUID of your Azure AD tenant (only visible when Azure AD Integration is enabled). | Find this in **Microsoft Entra ID → Overview** in the Azure Portal. Without the correct Tenant ID, the Azure AD integration will fail. |
-| **Enable Pod Identity** | ❌ OFF | Allows pods to use Azure Managed Identities to authenticate with Azure services without embedding credentials in code. | Eliminates the need for storing secrets in Kubernetes. Each pod assumes a managed identity and receives short-lived tokens. Note: superseded by the **Azure Workload Identity** add-on. |
+| **Enable Pod Identity** | ❌ OFF | ⚠️ **Deprecated**: Allows pods to use Azure Managed Identities to authenticate with Azure services without embedding credentials in code. Superseded by Azure Workload Identity. | Eliminates the need for storing secrets in Kubernetes. Each pod assumes a managed identity and receives short-lived tokens. **Use [Azure Workload Identity](https://learn.microsoft.com/azure/aks/workload-identity-overview) for new deployments** — Pod Identity (aad-pod-identity) was deprecated in September 2022. |
 | **Enable Container Image Scanning** | ❌ OFF | Enables vulnerability scanning of container images via Microsoft Defender for Containers. | Detects CVEs in images at runtime and at registry push time. Sends alerts for critical vulnerabilities. Adds cost based on the Defender for Containers pricing tier. |
 | **Pod Security Admission Level** | `baseline` | Kubernetes built-in admission controller enforcing security standards on pods in each namespace. | **Privileged**: no restrictions — use only for trusted system namespaces. **Baseline** (default): prevents known privilege escalations; recommended starting point. **Restricted**: heavily hardened; enforces current pod hardening best practices for production workloads. |
 | **Auto-Upgrade Channel** | `patch` | Controls the automatic upgrade cadence for the cluster. | **None**: no automatic upgrades. **Patch** (default): automatically applies the latest patch of your current minor version. **Stable**: upgrades to stable minor version releases. **Rapid**: upgrades to the latest minor version quickly. **Node Image**: only updates the node OS image, not the Kubernetes version. |
@@ -578,7 +583,7 @@ Network Policy  ⓘ
 
 1. **Always enable RBAC** — it is the first line of defence against accidental or malicious actions.
 2. **Enable Azure AD integration** to avoid managing separate Kubernetes users and credentials.
-3. **Use Managed Identities (Pod Identity / Workload Identity)** instead of storing service principal secrets in the cluster.
+3. **Use Azure Workload Identity** (recommended) instead of Pod Identity or storing service principal secrets in the cluster. See [Azure Workload Identity](https://learn.microsoft.com/azure/aks/workload-identity-overview).
 4. **Choose Calico or Azure network policies** to segment workloads and limit blast radius in case of a compromise.
 5. **Set Auto-Upgrade Channel to `patch`** (default) to receive security patches automatically.
 6. **Enable Image Scanning** for production clusters to detect container vulnerabilities early.
@@ -589,6 +594,7 @@ Network Policy  ⓘ
 - [AKS RBAC](https://learn.microsoft.com/azure/aks/manage-azure-rbac)
 - [AKS and Microsoft Entra ID integration](https://learn.microsoft.com/azure/aks/enable-authentication-microsoft-entra-id)
 - [Azure Workload Identity (recommended over Pod Identity)](https://learn.microsoft.com/azure/aks/workload-identity-overview)
+- [AAD Pod Identity deprecation notice](https://github.com/Azure/aad-pod-identity#project-status)
 - [Network policies in AKS](https://learn.microsoft.com/azure/aks/use-network-policies)
 - [Calico network policy](https://docs.tigera.io/calico/latest/about/)
 - [AKS cluster auto-upgrade](https://learn.microsoft.com/azure/aks/auto-upgrade-cluster)
@@ -1148,7 +1154,7 @@ The Wizard uses the **APIM v2 service tiers** for all production SKUs. The v2 ti
 | SKU | SLA | Multi-region | Zone Redundancy | VNet Support | Recommended for |
 |-----|-----|--------------|-----------------|--------------|-----------------|
 | **Developer** | ❌ None | ❌ | ❌ | Internal only | Dev/test environments only |
-| **BasicV2** | ✅ 99.95% | ❌ | ❌ | VNet injection | Low-traffic production APIs |
+| **BasicV2** | ✅ 99.9% | ❌ | ❌ | VNet injection | Low-traffic production APIs |
 | **StandardV2** | ✅ 99.95% | ❌ | ✅ | VNet injection | Mid-traffic production APIs |
 | **PremiumV2** | ✅ 99.99% | ✅ | ✅ | VNet injection | High-traffic, multi-region, private AKS |
 
@@ -1481,7 +1487,7 @@ resource spokeVnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
 }
 
 // ─── AKS cluster placed in the spoke subnet ───────────────────────────────────
-resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-01-01' = {
+resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-05-01' = {
   // ...
   properties: {
     agentPoolProfiles: [
@@ -1688,7 +1694,7 @@ CLUSTER BASICS
   Resource Group      my-aks-rg
   Cluster Name        my-aks-cluster
   Region              eastus
-  Kubernetes Version  1.31.x
+  Kubernetes Version  1.32.x
   AKS Mode            Standard
 
 SYSTEM NODE POOL
@@ -1802,7 +1808,7 @@ and a CI/CD pipeline workflow.
 │   required_providers {                                 │
 │     azurerm = {                                        │
 │       source  = "hashicorp/azurerm"                    │
-│       version = "~> 3.0"                               │
+│       version = "~> 4.0"                               │
 │     }                                                  │
 │   }                                                    │
 │ }                                                      │
@@ -1943,7 +1949,7 @@ script using the Azure CLI. Copy or download the script and run it in your local
 │ az aks create \                                              │
 │     --resource-group my-aks-rg \                            │
 │     --name my-aks-cluster \                                  │
-│     --kubernetes-version 1.31.x \                            │
+│     --kubernetes-version 1.32.x \                            │
 │     ...                                                      │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -2130,7 +2136,7 @@ The table below summarises every configurable field in the wizard, its default v
 | `resourceGroupName` | *(empty)* | Cluster Basics |
 | `clusterName` | *(empty)* | Cluster Basics |
 | `region` | `eastus` | Cluster Basics |
-| `kubernetesVersion` | `1.31.x` | Cluster Basics |
+| `kubernetesVersion` | `1.32.x` | Cluster Basics |
 | `aksMode` | `Standard` | Cluster Basics |
 | `systemNodePool.name` | `system` | Node Pools |
 | `systemNodePool.vmSize` | `Standard_D2s_v3` | Node Pools |
@@ -2156,7 +2162,7 @@ The table below summarises every configurable field in the wizard, its default v
 | `networkPlugin` | `azure` | Networking |
 | `dnsPrefix` | *(empty)* | Networking |
 | `serviceCidr` | `10.0.0.0/16` | Networking |
-| `dockerBridgeCidr` | `172.17.0.1/16` | Networking |
+| `dockerBridgeCidr` | `172.17.0.1/16` *(deprecated — not applied to new clusters)* | Networking |
 | `loadBalancerSku` | `Standard` | Networking |
 | `ingressController` | `none` | Networking |
 | `enableServiceMesh` | `false` | Networking |

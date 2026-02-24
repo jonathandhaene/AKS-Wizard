@@ -103,7 +103,7 @@ export function Networking() {
         <div>
           <label className="field-label">
             Docker Bridge CIDR{' '}
-            <Tooltip content="IP range for the Docker bridge network on nodes. Used for container-to-container communication.">
+            <Tooltip content="⚠️ Deprecated: This property was removed from the AKS networking profile in API version 2022-08-01+ and from the Terraform azurerm provider in v4.0. It is retained here for reference only and is not included in generated templates.">
               <span className="ml-1 text-xs cursor-help" style={{ color: 'var(--info)' }}>
                 ⓘ
               </span>
@@ -113,14 +113,28 @@ export function Networking() {
             className="field-input"
             value={config.dockerBridgeCidr}
             onChange={(e) => updateConfig({ dockerBridgeCidr: e.target.value })}
+            disabled
+            style={{ opacity: 0.5, cursor: 'not-allowed' }}
           />
+          <p className="text-xs mt-1" style={{ color: 'var(--warning)' }}>
+            ⚠️ Deprecated and removed from AKS networking profile. Not included in generated templates. See{' '}
+            <a
+              href="https://learn.microsoft.com/azure/aks/concepts-network"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--accent)' }}
+            >
+              AKS networking concepts
+            </a>
+            .
+          </p>
         </div>
 
         {/* Load Balancer SKU */}
         <div>
           <label className="field-label">
             Load Balancer SKU{' '}
-            <Tooltip content="Standard SKU offers availability zones, diagnostics, and 1000 backend pool members. Basic is limited and not recommended for production.">
+            <Tooltip content="Standard SKU offers availability zones, diagnostics, and up to 1000 backend pool members. Basic SKU was retired on September 30, 2025 and is no longer available for new deployments.">
               <span className="ml-1 text-xs cursor-help" style={{ color: 'var(--info)' }}>
                 ⓘ
               </span>
@@ -141,10 +155,24 @@ export function Networking() {
                   borderRadius: 'var(--radius)',
                 }}
               >
-                {sku === 'Standard' ? '⭐ Standard (Recommended)' : '🔹 Basic'}
+                {sku === 'Standard' ? '⭐ Standard (Recommended)' : '🔹 Basic (Retired)'}
               </button>
             ))}
           </div>
+          {config.loadBalancerSku === 'Basic' && (
+            <p className="mt-2 text-xs" style={{ color: 'var(--error)' }}>
+              ⛔ Azure Basic Load Balancer was <strong>retired on September 30, 2025</strong> and is no longer available for new deployments. Use <strong>Standard</strong> SKU instead. See{' '}
+              <a
+                href="https://learn.microsoft.com/azure/load-balancer/load-balancer-basic-upgrade-guidance"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'var(--accent)' }}
+              >
+                retirement guidance
+              </a>
+              .
+            </p>
+          )}
         </div>
 
         {/* Ingress Controller */}
@@ -248,9 +276,9 @@ export function Networking() {
         <div className="flex items-center justify-between py-3 border-t" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-              Enable Service Mesh (Open Service Mesh / Istio)
+              Enable Service Mesh (Istio)
             </span>
-            <Tooltip content="A service mesh provides mTLS, observability, and fine-grained traffic management between services. AKS supports Open Service Mesh (OSM) and Istio as managed add-ons.">
+            <Tooltip content="A service mesh provides mTLS, observability, and fine-grained traffic management between services. AKS supports Istio as a managed add-on. Note: Open Service Mesh (OSM) was retired as a managed AKS add-on in November 2023.">
               <span className="text-xs cursor-help" style={{ color: 'var(--info)' }}>
                 ⓘ
               </span>

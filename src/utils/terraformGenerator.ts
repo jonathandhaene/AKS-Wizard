@@ -16,8 +16,7 @@ export function generateTerraform(cfg: WizardConfig): string {
   network_profile {
     network_plugin    = "${cfg.networkPlugin}"
     load_balancer_sku = "${cfg.loadBalancerSku.toLowerCase()}"
-    service_cidr      = "${cfg.serviceCidr}"
-    docker_bridge_cidr = "${cfg.dockerBridgeCidr}"${cfg.networkPolicy !== 'None' ? `\n    network_policy    = "${cfg.networkPolicy}"` : ''}
+    service_cidr      = "${cfg.serviceCidr}"${cfg.networkPolicy !== 'None' ? `\n    network_policy    = "${cfg.networkPolicy}"` : ''}
   }`;
 
   const rbacBlock = cfg.enableRbac
@@ -113,7 +112,7 @@ resource "azurerm_kubernetes_cluster_node_pool" "user_${idx + 1}" {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.0"
+      version = "~> 4.0"
     }
   }
 }
