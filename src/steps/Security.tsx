@@ -116,8 +116,8 @@ export function Security() {
         <Toggle
           enabled={config.enablePodIdentity}
           onToggle={() => updateConfig({ enablePodIdentity: !config.enablePodIdentity })}
-          label="Enable Pod Identity"
-          tooltip="Allows pods to use Azure Managed Identities to access Azure resources without storing credentials."
+          label="Enable Pod Identity (deprecated)"
+          tooltip="⚠️ Deprecated (September 2022): aad-pod-identity was deprecated in favour of Azure Workload Identity. For new deployments, use the Azure Workload Identity add-on instead. See https://learn.microsoft.com/azure/aks/workload-identity-overview"
         />
 
         <Toggle

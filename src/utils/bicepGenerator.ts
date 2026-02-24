@@ -120,7 +120,7 @@ param kubernetesVersion string = '${cfg.kubernetesVersion}'
 @description('VM size for system node pool')
 param systemNodeVmSize string = '${cfg.systemNodePool.vmSize}'${tenantIdParam}
 ${hubSpokeVNetsBlock}${workspaceResource}
-resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-01-01' = {
+resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-05-01' = {
   name: clusterName
   location: location
   identity: {
@@ -162,8 +162,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-01-01' = {
     networkProfile: {
       networkPlugin: '${cfg.networkPlugin}'
       loadBalancerSku: '${cfg.loadBalancerSku.toLowerCase()}'
-      serviceCidr: '${cfg.serviceCidr}'
-      dockerBridgeCidr: '${cfg.dockerBridgeCidr}'${networkPolicyLine}
+      serviceCidr: '${cfg.serviceCidr}'${networkPolicyLine}
     }${addonsBlock}
   }
   tags: {

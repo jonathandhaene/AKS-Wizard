@@ -180,7 +180,7 @@ export const defaultConfig: WizardConfig = {
   resourceGroupName: '',
   clusterName: '',
   region: 'eastus',
-  kubernetesVersion: '1.31.x',
+  kubernetesVersion: '1.32.x',
   aksMode: 'Standard',
 
   systemNodePool: {
